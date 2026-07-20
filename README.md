@@ -9,12 +9,31 @@ This repo is **backend only** (Express + TypeScript on Bun). No frontend.
 ```bash
 bun install
 cp .env.example .env
-# Fill secrets as you implement features; empty .env is fine for the scaffold.
+# Fill at least: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, SUPABASE_JWT_SECRET
 ```
 
-Apply the schema in Supabase Dashboard → SQL Editor:
+### Supabase schema
 
-- `db/schema.sql`
+1. Open [Supabase Dashboard](https://supabase.com/dashboard) → your project → **SQL Editor**.
+2. Paste the contents of `db/schema.sql` and **Run**.
+3. Verify from the repo:
+
+```bash
+bun run db:verify
+# expect: each table OK (count may be 0)
+```
+
+If verify fails right after apply, wait ~10s for the PostgREST schema cache and re-run.
+
+Optional: to apply schema via the Management API instead, set a personal access token as `SUPABASE_ACCESS_TOKEN` in `.env` (never commit it) and use the migrations endpoint — the runtime app does not need this token.
+
+### Auth providers (Dashboard)
+
+Supabase Auth owns Google/GitHub OAuth. In the Dashboard:
+
+1. **Authentication** → **Providers**
+2. Enable **Google** and **GitHub** (add client IDs/secrets from each provider console)
+3. OAuth redirect URLs belong to the **frontend** when it exists — this backend only verifies Supabase-issued JWTs
 
 ## Scripts
 
@@ -25,6 +44,7 @@ Apply the schema in Supabase Dashboard → SQL Editor:
 | `bun run lint` | ESLint |
 | `bun run build` | Bundle to `dist/` |
 | `bun run start` | Run production bundle |
+| `bun run db:verify` | Check service-role access to all schema tables |
 
 ## Smoke test
 

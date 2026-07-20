@@ -1,7 +1,7 @@
 -- micromanus schema (AGENTS.md §8)
 -- Apply in Supabase Dashboard → SQL Editor.
 -- The API uses the service-role client and bypasses RLS.
--- RLS is enabled deny-by-default for anon/authenticated until a later auth/RLS pass.
+-- RLS is enabled; anon/authenticated have no table privileges (backend-only).
 
 create extension if not exists "pgcrypto";
 
@@ -34,11 +34,21 @@ end $$;
 -- ---------------------------------------------------------------------------
 
 create table if not exists users (
-  id uuid primary key,
+  id uuid primary key references auth.users (id) on delete cascade,
   name text not null,
   email text not null,
   created_at timestamptz not null default now()
 );
+
+-- If users already existed without the auth.users FK, add it idempotently.
+do $$ begin
+  alter table users
+    add constraint users_id_fkey
+    foreign key (id) references auth.users (id) on delete cascade;
+exception
+  when duplicate_object then null;
+  when undefined_table then null;
+end $$;
 
 create table if not exists chats (
   id uuid primary key default gen_random_uuid(),
@@ -153,3 +163,33 @@ alter table credit_purchases enable row level security;
 alter table coupons enable row level security;
 alter table coupon_redemptions enable row level security;
 alter table api_keys enable row level security;
+
+-- ---------------------------------------------------------------------------
+-- Privileges: service_role only (backend). Revoke Data API roles.
+-- ---------------------------------------------------------------------------
+
+grant select, insert, update, delete on table
+  users,
+  chats,
+  messages,
+  sources,
+  credit_usage,
+  credit_balances,
+  credit_purchases,
+  coupons,
+  coupon_redemptions,
+  api_keys
+to service_role;
+
+revoke all on table
+  users,
+  chats,
+  messages,
+  sources,
+  credit_usage,
+  credit_balances,
+  credit_purchases,
+  coupons,
+  coupon_redemptions,
+  api_keys
+from anon, authenticated;

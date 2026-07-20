@@ -8,7 +8,8 @@
     "start": "bun run dist/index.js",
     "build": "bun build src/index.ts --outdir dist --target bun",
     "typecheck": "tsc --noEmit",
-    "lint": "eslint src db"
+    "lint": "eslint src db scripts",
+    "db:verify": "bun run scripts/verify-supabase.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.90.1",

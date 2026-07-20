@@ -1,2 +1,1 @@
-/** Service stubs — feature prompts will flesh these out. */
-export {};
+export { ensureUser, getCurrentUser, type EnsureUserInput } from "./users.ts";

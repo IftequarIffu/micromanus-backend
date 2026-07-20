@@ -4,6 +4,7 @@ import { requestLog } from "./middleware/request-log.ts";
 import { chatsRouter } from "./routes/chats.ts";
 import { creditsRouter } from "./routes/credits.ts";
 import { healthRouter } from "./routes/health.ts";
+import { meRouter } from "./routes/me.ts";
 import { modelsRouter } from "./routes/models.ts";
 import { webhooksRouter } from "./routes/webhooks.ts";
 
@@ -19,6 +20,7 @@ export function createApp(): Express {
   app.use(express.json());
 
   app.use(healthRouter);
+  app.use(meRouter);
   app.use(chatsRouter);
   app.use(creditsRouter);
   app.use(modelsRouter);

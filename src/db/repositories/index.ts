@@ -1,2 +1,1 @@
-/** Repository stubs — feature prompts will flesh these out. */
-export {};
+export { getUserById, upsertUser, type UpsertUserInput } from "./users.ts";

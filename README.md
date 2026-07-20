@@ -25,15 +25,41 @@ bun run db:verify
 
 If verify fails right after apply, wait ~10s for the PostgREST schema cache and re-run.
 
-Optional: to apply schema via the Management API instead, set a personal access token as `SUPABASE_ACCESS_TOKEN` in `.env` (never commit it) and use the migrations endpoint — the runtime app does not need this token.
+### Auth providers (Google + GitHub)
 
-### Auth providers (Dashboard)
+Supabase Auth owns OAuth. This backend only verifies JWTs and upserts `public.users`.
 
-Supabase Auth owns Google/GitHub OAuth. In the Dashboard:
+**Callback URL** (use in Google Cloud / GitHub OAuth app settings):
 
-1. **Authentication** → **Providers**
-2. Enable **Google** and **GitHub** (add client IDs/secrets from each provider console)
-3. OAuth redirect URLs belong to the **frontend** when it exists — this backend only verifies Supabase-issued JWTs
+```text
+https://<project-ref>.supabase.co/auth/v1/callback
+```
+
+Find it on Dashboard → **Authentication** → **Providers** → Google or GitHub.
+
+#### Google
+
+1. [Google Cloud Console](https://console.cloud.google.com/) → create/select a project → **Google Auth Platform** / APIs & Services → **Credentials**.
+2. Create an OAuth client ID (Web application).
+3. Authorized redirect URI: the Supabase callback URL above.
+4. Copy Client ID + Client Secret into Dashboard → **Authentication** → **Providers** → **Google** → enable and save.
+5. Scopes needed: `openid`, `userinfo.email`, `userinfo.profile`.
+
+#### GitHub
+
+1. GitHub → **Settings** → **Developer settings** → **OAuth Apps** → **New OAuth App**.
+2. Authorization callback URL: the same Supabase callback URL.
+3. Copy Client ID + generate Client Secret into Dashboard → **Authentication** → **Providers** → **GitHub** → enable and save.
+
+#### Signing in (frontend / test client)
+
+`signInWithOAuth({ provider: "google" | "github" })` runs in a **frontend** (or a small local script) using your Supabase **publishable** / anon key — not this API. After sign-in, send the session `access_token` as:
+
+```http
+Authorization: Bearer <access_token>
+```
+
+This API never implements OAuth redirects or code exchange.
 
 ## Scripts
 
@@ -53,17 +79,25 @@ bun run dev
 ```
 
 ```bash
-curl -sS http://localhost:3000/health
+curl -sS http://localhost:4000/health
 # {"ok":true}
+
+curl -sS -o /dev/null -w "%{http_code}\n" http://localhost:4000/me
+# 401
+
+curl -sS http://localhost:4000/me \
+  -H "Authorization: Bearer <SUPABASE_ACCESS_TOKEN>"
+# {"id":"...","name":"...","email":"...","created_at":"..."}
 ```
 
-Authenticated routes require `Authorization: Bearer <token>` and currently return `501` until feature work lands. `POST /webhooks/stripe` is unauthenticated (Stripe signature verification comes later).
+Protected feature routes still return `501` until those features land. `POST /webhooks/stripe` stays unauthenticated (Stripe signature later).
 
-## API surface (stubs)
+## API surface
 
 | Method | Path | Auth |
 |---|---|---|
 | `GET` | `/health` | no |
+| `GET` | `/me` | yes |
 | `POST` | `/chats` | yes |
 | `GET` | `/chats/:chatId` | yes |
 | `POST` | `/chats/:chatId/messages` | yes |

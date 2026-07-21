@@ -24,7 +24,9 @@ export type CollectedSource = SearchResult;
 export function createSearchTool(onResults: (results: SearchResult[]) => void) {
   return tool({
     description:
-      "Search the live web for current information. Use when the user question needs up-to-date facts or sources.",
+      "Search the live web via Tavily for current information and citable sources. " +
+      "Use when the user needs up-to-date facts, news, or citations — especially before create_pdf. " +
+      "For detailed PDF reports, call this multiple times with different query angles.",
     inputSchema: z.object({
       query: z.string().min(1).describe("Search query"),
     }),
@@ -35,14 +37,15 @@ export function createSearchTool(onResults: (results: SearchResult[]) => void) {
       }
 
       const client = tavily({ apiKey: env.TAVILY_API_KEY });
-      const response = await client.search(query, { maxResults: 5 });
+      // More results give the model richer material for multi-page PDF reports.
+      const response = await client.search(query, { maxResults: 8 });
 
       const results: SearchResult[] = (response.results ?? [])
-        .slice(0, 5)
+        .slice(0, 8)
         .map((r) => ({
           title: r.title ?? "",
           url: r.url ?? "",
-          content: (r.content ?? "").slice(0, 2000),
+          content: (r.content ?? "").slice(0, 3000),
         }));
 
       const parsed = searchOutputSchema.parse({ results });

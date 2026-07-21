@@ -431,6 +431,44 @@ revoke all on function redeem_coupon(uuid, text) from public;
 grant execute on function redeem_coupon(uuid, text) to service_role;
 
 -- ---------------------------------------------------------------------------
+-- Storage: private bucket for chat PDFs (PDF tool)
+-- ---------------------------------------------------------------------------
+
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values (
+  'chat-pdfs',
+  'chat-pdfs',
+  false,
+  10485760,
+  array['application/pdf']::text[]
+)
+on conflict (id) do nothing;
+
+create or replace function public.ensure_chat_pdfs_bucket()
+returns jsonb
+language plpgsql
+security definer
+set search_path = storage, public
+as $$
+begin
+  insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+  values (
+    'chat-pdfs',
+    'chat-pdfs',
+    false,
+    10485760,
+    array['application/pdf']::text[]
+  )
+  on conflict (id) do nothing;
+
+  return jsonb_build_object('ok', true, 'bucket', 'chat-pdfs');
+end;
+$$;
+
+revoke all on function public.ensure_chat_pdfs_bucket() from public;
+grant execute on function public.ensure_chat_pdfs_bucket() to service_role;
+
+-- ---------------------------------------------------------------------------
 -- RLS (deny-by-default for Data API roles; backend uses service role)
 -- ---------------------------------------------------------------------------
 

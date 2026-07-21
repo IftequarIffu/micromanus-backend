@@ -18,6 +18,7 @@ import {
   persistSourcesForMessage,
 } from "../services/chats.ts";
 import { chargeCredits } from "../services/credits.ts";
+import { createPdfTool, type PdfCreatedMeta } from "../tools/pdf.ts";
 import { createSearchTool, type SearchResult } from "../tools/search.ts";
 import { resolveModel, type ModelDefinition } from "./models.ts";
 
@@ -119,12 +120,26 @@ export async function streamChatCompletion(params: StreamChatParams): Promise<vo
   })();
 
   const collectedSources: SearchResult[] = [];
+  let lastPdf: PdfCreatedMeta | undefined;
   const search = createSearchTool((results) => {
     for (const r of results) {
       if (!collectedSources.some((s) => s.url === r.url)) {
         collectedSources.push(r);
       }
     }
+  });
+  const create_pdf = createPdfTool({
+    userId,
+    chatId,
+    onCreated: (meta) => {
+      lastPdf = meta;
+      // Emit as soon as the tool succeeds (during the agent loop, before final tokens finish).
+      writeSse(res, "pdf_ready", {
+        chatId,
+        url: meta.url,
+        filename: meta.filename,
+      });
+    },
   });
 
   console.log(`LLM call started chatId=${chatId} model=${modelId}`);
@@ -135,12 +150,19 @@ export async function streamChatCompletion(params: StreamChatParams): Promise<vo
     const result = streamText({
       model: languageModel,
       messages: toModelMessages(history),
-      tools: { web_search: search },
-      stopWhen: isStepCount(5),
+      tools: { web_search: search, create_pdf },
+      // Allow multiple Tavily searches + a detailed PDF tool call + final reply.
+      stopWhen: isStepCount(8),
       // Billing / auth failures should fail fast (default retries hide the real error for ~10s)
       maxRetries: 0,
       instructions:
-        "You are a helpful assistant in micromanus. Use the web_search tool when current information or citations would help. Be concise and accurate.",
+        "You are a helpful assistant in micromanus. " +
+        "Use the web_search tool (Tavily) whenever current information or citations would help — do not invent news or URLs. " +
+        "When the user asks for a PDF, report, or downloadable document: " +
+        "(1) call web_search at least twice with different queries/angles to gather Tavily sources; " +
+        "(2) call create_pdf with a real title, at least 5 detailed sections (each several paragraphs of analysis grounded in the search results — never short stubs), " +
+        "and a sources list whose title+url pairs come only from those web_search results; " +
+        "(3) in your final reply, briefly summarize and include the download URL. Be accurate; prefer depth for PDF reports.",
       onError: ({ error }) => {
         streamError = error;
         console.error(
@@ -218,9 +240,11 @@ export async function streamChatCompletion(params: StreamChatParams): Promise<vo
 
     writeSse(res, "done", {
       ok: true,
+      chatId,
       messageId: assistantMessage.id,
       usage: { inputTokens, outputTokens, cachedTokens, creditsCharged },
       sources: collectedSources.map((s) => ({ title: s.title, url: s.url })),
+      ...(lastPdf ? { pdf: lastPdf } : {}),
     });
     res.end();
   } catch (err) {

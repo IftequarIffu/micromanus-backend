@@ -1,2 +1,1 @@
-/** Tool stubs (search, PDF) — feature prompts will flesh these out. */
-export {};
+export { createSearchTool, searchResultSchema, type SearchResult, type CollectedSource } from "./search.ts";

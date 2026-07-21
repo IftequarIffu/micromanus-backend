@@ -2,8 +2,6 @@ export type MessageRole = "user" | "assistant";
 
 export type LlmProvider = "openai" | "claude" | "gemini";
 
-export type ApiKeyProvider = "openai" | "claude" | "gemini" | "tavily" | "stripe";
-
 export type PurchaseStatus = "pending" | "completed" | "failed";
 
 export type User = {
@@ -83,10 +81,23 @@ export type CouponRedemption = {
   redeemed_at: string;
 };
 
+/** BYOK row — ciphertext fields never leave the server. */
 export type ApiKey = {
   id: string;
-  provider: ApiKeyProvider;
+  user_id: string;
+  provider: LlmProvider;
   encrypted_key: string;
-  active: boolean;
+  iv: string;
+  auth_tag: string;
+  last_four: string;
   created_at: string;
+  updated_at: string;
+};
+
+/** Safe list/read shape for API responses. */
+export type ApiKeyPublic = {
+  provider: LlmProvider;
+  last_four: string;
+  created_at: string;
+  updated_at: string;
 };

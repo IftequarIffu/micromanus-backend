@@ -1,6 +1,7 @@
 import express, { type Express } from "express";
 import { errorHandler } from "./middleware/error.ts";
 import { requestLog } from "./middleware/request-log.ts";
+import { apiKeysRouter } from "./routes/api-keys.ts";
 import { chatsRouter } from "./routes/chats.ts";
 import { creditsRouter } from "./routes/credits.ts";
 import { healthRouter } from "./routes/health.ts";
@@ -21,6 +22,7 @@ export function createApp(): Express {
 
   app.use(healthRouter);
   app.use(meRouter);
+  app.use(apiKeysRouter);
   app.use(chatsRouter);
   app.use(creditsRouter);
   app.use(modelsRouter);

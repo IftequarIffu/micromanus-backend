@@ -1,9 +1,11 @@
 import { Router } from "express";
 import { requireAuth } from "../middleware/auth.ts";
-import { notImplemented } from "../middleware/error.ts";
+import { listModels } from "../orchestration/models.ts";
 
 export const modelsRouter = Router();
 
 modelsRouter.use(requireAuth);
 
-modelsRouter.get("/models", notImplemented);
+modelsRouter.get("/models", (_req, res) => {
+  res.json({ models: listModels() });
+});

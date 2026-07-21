@@ -9,10 +9,6 @@ const envSchema = z.object({
   SUPABASE_SERVICE_ROLE_KEY: optionalString,
   SUPABASE_JWT_SECRET: optionalString,
 
-  OPENAI_API_KEY: optionalString,
-  ANTHROPIC_API_KEY: optionalString,
-  GOOGLE_GEMINI_API_KEY: optionalString,
-
   TAVILY_API_KEY: optionalString,
 
   STRIPE_SECRET_KEY: optionalString,
@@ -36,7 +32,7 @@ function emptyToUndefined<T extends Record<string, unknown>>(value: T): T {
   return out;
 }
 
-/** Load and validate env. Provider secrets are optional so scaffold boots with an empty `.env`. */
+/** Load and validate env. Secrets are optional so the server can boot; feature code fails at use-time. */
 export function loadEnv(raw: NodeJS.ProcessEnv = process.env): Env {
   if (cached) {
     return cached;

@@ -20,11 +20,6 @@ exception when duplicate_object then null;
 end $$;
 
 do $$ begin
-  create type api_key_provider as enum ('openai', 'claude', 'gemini', 'tavily', 'stripe');
-exception when duplicate_object then null;
-end $$;
-
-do $$ begin
   create type purchase_status as enum ('pending', 'completed', 'failed');
 exception when duplicate_object then null;
 end $$;
@@ -139,15 +134,105 @@ create table if not exists coupon_redemptions (
   constraint coupon_redemptions_coupon_user_unique unique (coupon_code, user_id)
 );
 
-create table if not exists api_keys (
+-- ---------------------------------------------------------------------------
+-- BYOK api_keys (AGENTS.md §8 / §16)
+-- Replaces older system-wide api_keys shape if present.
+-- ---------------------------------------------------------------------------
+
+drop table if exists api_keys;
+
+create table api_keys (
   id uuid primary key default gen_random_uuid(),
-  provider api_key_provider not null,
+  user_id uuid not null references users (id) on delete cascade,
+  provider llm_provider not null,
   encrypted_key text not null,
-  active boolean not null default true,
-  created_at timestamptz not null default now()
+  iv text not null,
+  auth_tag text not null,
+  last_four text not null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint api_keys_user_provider_unique unique (user_id, provider)
 );
 
-create index if not exists api_keys_provider_active_idx on api_keys (provider, active);
+create index if not exists api_keys_user_id_idx on api_keys (user_id);
+
+-- Optional: drop unused legacy enum if it exists (safe if nothing depends on it)
+do $$ begin
+  drop type if exists api_key_provider;
+exception when dependent_objects_still_exist then null;
+end $$;
+
+-- ---------------------------------------------------------------------------
+-- Credit usage + balance decrement (single transaction via RPC)
+-- ---------------------------------------------------------------------------
+
+create or replace function record_credit_usage_and_decrement(
+  p_user_id uuid,
+  p_chat_id uuid,
+  p_model_name text,
+  p_provider llm_provider,
+  p_input_tokens integer,
+  p_output_tokens integer,
+  p_cached_tokens integer,
+  p_credits_charged integer
+)
+returns credit_usage
+language plpgsql
+security invoker
+set search_path = public
+as $$
+declare
+  usage_row credit_usage;
+  updated_count integer;
+begin
+  if p_credits_charged < 0 then
+    raise exception 'credits_charged must be non-negative';
+  end if;
+
+  insert into credit_usage (
+    user_id,
+    chat_id,
+    model_name,
+    provider,
+    input_tokens,
+    output_tokens,
+    cached_tokens,
+    credits_charged
+  )
+  values (
+    p_user_id,
+    p_chat_id,
+    p_model_name,
+    p_provider,
+    p_input_tokens,
+    p_output_tokens,
+    p_cached_tokens,
+    p_credits_charged
+  )
+  returning * into usage_row;
+
+  update credit_balances
+  set
+    balance = balance - p_credits_charged,
+    updated_at = now()
+  where user_id = p_user_id
+    and balance >= p_credits_charged;
+
+  get diagnostics updated_count = row_count;
+  if updated_count = 0 then
+    raise exception 'insufficient_credits';
+  end if;
+
+  return usage_row;
+end;
+$$;
+
+revoke all on function record_credit_usage_and_decrement(
+  uuid, uuid, text, llm_provider, integer, integer, integer, integer
+) from public;
+grant execute on function record_credit_usage_and_decrement(
+  uuid, uuid, text, llm_provider, integer, integer, integer, integer
+) to service_role;
 
 -- ---------------------------------------------------------------------------
 -- RLS (deny-by-default for Data API roles; backend uses service role)

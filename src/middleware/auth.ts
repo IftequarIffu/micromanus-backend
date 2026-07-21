@@ -10,6 +10,11 @@ export type AuthedRequest = Request & {
   userId: string;
 };
 
+/** Read userId set by requireAuth (works with Express param generics). */
+export function authedUserId(req: Request): string {
+  return (req as unknown as AuthedRequest).userId;
+}
+
 function bearerToken(req: Request): string | null {
   const header = req.header("authorization");
   if (!header || !header.toLowerCase().startsWith("bearer ")) {

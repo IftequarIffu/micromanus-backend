@@ -1,12 +1,14 @@
 import type { CreditBalance, CreditUsage } from "../../db/types.ts";
 import type Stripe from "stripe";
 import { constructStripeEvent, createCheckoutSession } from "../billing/stripe.ts";
+import { mapCouponRedeemError, mapDbError } from "../db/map-error.ts";
 import {
   completeCreditPurchase,
   getCreditBalance,
   getPurchaseBySessionId,
   insertPendingPurchase,
   listCreditUsageForUser,
+  redeemCoupon as redeemCouponRpc,
   type RecordUsageInput,
   recordCreditUsageAndDecrement,
 } from "../db/repositories/credits.ts";
@@ -86,6 +88,56 @@ export async function createCreditsCheckout(
   return { url, sessionId };
 }
 
+export type RedeemCouponResponse = {
+  code: string;
+  creditsGranted: number;
+  balance: number;
+};
+
+export async function redeemCoupon(
+  userId: string,
+  code: string,
+): Promise<RedeemCouponResponse> {
+  const normalized = code.trim().toUpperCase();
+  console.log(`coupon redeem attempt userId=${userId} code=${normalized}`);
+
+  try {
+    const result = await redeemCouponRpc(userId, code);
+    console.log(
+      `coupon redeem success userId=${userId} code=${result.coupon_code} ` +
+        `creditsGranted=${result.credits_granted} balance=${result.balance}`,
+    );
+    return {
+      code: result.coupon_code,
+      creditsGranted: result.credits_granted,
+      balance: result.balance,
+    };
+  } catch (err) {
+    const message =
+      err && typeof err === "object" && "message" in err
+        ? String((err as { message: unknown }).message)
+        : err instanceof Error
+          ? err.message
+          : String(err);
+
+    const mapped = mapCouponRedeemError(message);
+    if (mapped) {
+      console.log(
+        `coupon redeem failed userId=${userId} code=${normalized} reason=${mapped.code}`,
+      );
+      throw mapped;
+    }
+
+    mapDbError("coupons.redeem", {
+      code:
+        err && typeof err === "object" && "code" in err
+          ? String((err as { code: unknown }).code)
+          : undefined,
+      message,
+    });
+  }
+}
+
 function parsePositiveInt(value: string | undefined): number | null {
   if (value === undefined || value === "") {
     return null;
@@ -113,9 +165,7 @@ async function handleCheckoutSessionCompleted(session: Stripe.Checkout.Session):
   const metadata = session.metadata ?? {};
 
   const userId = metadata.userId || session.client_reference_id || null;
-  const creditsGranted =
-    parsePositiveInt(metadata.creditsGranted ?? undefined) ??
-    null;
+  const creditsGranted = parsePositiveInt(metadata.creditsGranted ?? undefined) ?? null;
   const amountPaidCents =
     parseNonNegativeInt(metadata.amountPaidCents ?? undefined) ??
     (typeof session.amount_total === "number" ? session.amount_total : null);

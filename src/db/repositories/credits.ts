@@ -164,3 +164,26 @@ export async function completeCreditPurchase(
   }
   return data as CreditPurchase;
 }
+
+export type RedeemCouponResult = {
+  coupon_code: string;
+  credits_granted: number;
+  balance: number;
+  redemption_id: string;
+};
+
+export async function redeemCoupon(
+  userId: string,
+  code: string,
+): Promise<RedeemCouponResult> {
+  const client = requireClient();
+  const { data, error } = await client.rpc("redeem_coupon", {
+    p_user_id: userId,
+    p_code: code,
+  });
+
+  if (error) {
+    throw error;
+  }
+  return data as RedeemCouponResult;
+}

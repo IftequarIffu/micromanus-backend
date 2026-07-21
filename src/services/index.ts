@@ -16,4 +16,4 @@ export {
   getChatHistory,
   persistSourcesForMessage,
 } from "./chats.ts";
-export { requirePositiveBalance, getCreditsSummary, chargeCredits, createCreditsCheckout, handleStripeWebhook } from "./credits.ts";
+export { requirePositiveBalance, getCreditsSummary, chargeCredits, createCreditsCheckout, redeemCoupon, handleStripeWebhook } from "./credits.ts";

@@ -18,8 +18,8 @@ cp .env.example .env
 
 1. Open [Supabase Dashboard](https://supabase.com/dashboard) → your project → **SQL Editor**.
 2. Paste the contents of `db/schema.sql` and **Run**.
-   - This recreates `api_keys` in the BYOK shape (`user_id`, `iv`, `auth_tag`, `last_four`) and adds `record_credit_usage_and_decrement` plus `complete_credit_purchase`.
-3. If you already applied an older `schema.sql`, also run `db/migrations/002_complete_credit_purchase.sql`.
+   - This recreates `api_keys` in the BYOK shape (`user_id`, `iv`, `auth_tag`, `last_four`) and adds `record_credit_usage_and_decrement`, `complete_credit_purchase`, and `redeem_coupon`.
+3. If you already applied an older `schema.sql`, also run the pending files under `db/migrations/` in order (`002_complete_credit_purchase.sql`, then `003_redeem_coupon.sql`).
 4. Verify from the repo:
 
 ```bash
@@ -190,6 +190,35 @@ curl -sS http://localhost:3000/credits \
 
 Replay the same `checkout.session.completed` event — balance must not increase again.
 
+## Redeem coupon (platform credits)
+
+1. Apply `db/migrations/003_redeem_coupon.sql` in the Supabase SQL Editor if not already applied.
+2. Seed a test coupon (codes are stored/matched uppercase):
+
+```sql
+insert into coupons (code, credits_value, max_redemptions, redemptions_count, expires_at, active)
+values ('WELCOME100', 100, 1000, 0, null, true)
+on conflict (code) do update
+set
+  credits_value = excluded.credits_value,
+  max_redemptions = excluded.max_redemptions,
+  redemptions_count = 0,
+  expires_at = null,
+  active = true;
+```
+
+3. Redeem (case-insensitive input):
+
+```bash
+curl -sS -X POST http://localhost:3000/credits/redeem \
+  -H "Authorization: Bearer <SUPABASE_ACCESS_TOKEN>" \
+  -H "Content-Type: application/json" \
+  -d '{"code":"welcome100"}'
+# {"code":"WELCOME100","creditsGranted":100,"balance":<previous+100>}
+```
+
+4. Redeeming the same code again for the same user returns `409` / `coupon_already_redeemed` with no second balance bump.
+
 ## API surface
 
 | Method | Path | Auth |
@@ -204,7 +233,7 @@ Replay the same `checkout.session.completed` event — balance must not increase
 | `POST` | `/chats/:chatId/messages` | yes (SSE) |
 | `GET` | `/credits?chatId=` | yes |
 | `POST` | `/credits/checkout` | yes |
-| `POST` | `/credits/redeem` | yes (501) |
+| `POST` | `/credits/redeem` | yes |
 | `GET` | `/models` | yes |
 | `POST` | `/webhooks/stripe` | Stripe signature |
 

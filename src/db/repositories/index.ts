@@ -30,7 +30,9 @@ export {
   insertPendingPurchase,
   getPurchaseBySessionId,
   completeCreditPurchase,
+  redeemCoupon,
   type RecordUsageInput,
   type InsertPendingPurchaseInput,
   type CompletePurchaseInput,
+  type RedeemCouponResult,
 } from "./credits.ts";

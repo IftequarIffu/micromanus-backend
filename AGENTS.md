@@ -483,6 +483,8 @@ Canonical list lives in `.env.example`. Nothing in this backend is browser-expos
 | `TAVILY_API_KEY` | Search tool (system-owned) | server only |
 | `STRIPE_SECRET_KEY` | Stripe API calls (system-owned) | server only |
 | `STRIPE_WEBHOOK_SECRET` | Verifying Stripe webhook signatures | server only |
+| `CHECKOUT_SUCCESS_URL` | Stripe Checkout success redirect (include `{CHECKOUT_SESSION_ID}`) | server only |
+| `CHECKOUT_CANCEL_URL` | Stripe Checkout cancel redirect | server only |
 | `ADMIN_SECRET` | Protects internal/admin routes | server only |
 
 Note: there are no system-wide `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` / `GEMINI_API_KEY` variables — LLM provider keys are BYOK, stored per user in `api_keys` (section 8), never in environment variables.

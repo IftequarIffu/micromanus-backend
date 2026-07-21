@@ -1,7 +1,8 @@
 import { Router } from "express";
+import { z } from "zod";
 import { authedUserId, requireAuth } from "../middleware/auth.ts";
-import { notImplemented } from "../middleware/error.ts";
-import { getCreditsSummary } from "../services/credits.ts";
+import { AppError, notImplemented } from "../middleware/error.ts";
+import { createCreditsCheckout, getCreditsSummary } from "../services/credits.ts";
 
 export const creditsRouter = Router();
 
@@ -21,5 +22,28 @@ creditsRouter.get("/credits", async (req, res, next) => {
   }
 });
 
-creditsRouter.post("/credits/checkout", notImplemented);
+const checkoutBodySchema = z.object({
+  packageId: z.string().trim().min(1),
+});
+
+creditsRouter.post("/credits/checkout", async (req, res, next) => {
+  try {
+    const userId = authedUserId(req);
+    const parsed = checkoutBodySchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: "invalid_body", code: "invalid_body" });
+      return;
+    }
+
+    const result = await createCreditsCheckout(userId, parsed.data.packageId);
+    res.status(200).json(result);
+  } catch (err) {
+    if (err instanceof AppError) {
+      res.status(err.status).json({ error: err.message, code: err.code });
+      return;
+    }
+    next(err);
+  }
+});
+
 creditsRouter.post("/credits/redeem", notImplemented);

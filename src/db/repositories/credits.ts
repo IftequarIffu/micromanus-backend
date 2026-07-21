@@ -1,4 +1,9 @@
-import type { CreditBalance, CreditUsage, LlmProvider } from "../../../db/types.ts";
+import type {
+  CreditBalance,
+  CreditPurchase,
+  CreditUsage,
+  LlmProvider,
+} from "../../../db/types.ts";
 import { getSupabaseClient } from "../client.ts";
 
 function requireClient() {
@@ -89,4 +94,73 @@ export async function listCreditUsageByChatId(chatId: string): Promise<CreditUsa
     throw new Error(`credit_usage.listByChat failed: ${error.code ?? error.message}`);
   }
   return (data ?? []) as CreditUsage[];
+}
+
+export type InsertPendingPurchaseInput = {
+  userId: string;
+  stripeSessionId: string;
+  amountPaidCents: number;
+  creditsGranted: number;
+};
+
+export async function insertPendingPurchase(
+  input: InsertPendingPurchaseInput,
+): Promise<CreditPurchase> {
+  const client = requireClient();
+  const { data, error } = await client
+    .from("credit_purchases")
+    .insert({
+      user_id: input.userId,
+      stripe_session_id: input.stripeSessionId,
+      amount_paid_cents: input.amountPaidCents,
+      credits_granted: input.creditsGranted,
+      status: "pending",
+    })
+    .select("*")
+    .single();
+
+  if (error) {
+    throw new Error(`credit_purchases.insertPending failed: ${error.code ?? error.message}`);
+  }
+  return data as CreditPurchase;
+}
+
+export async function getPurchaseBySessionId(
+  stripeSessionId: string,
+): Promise<CreditPurchase | null> {
+  const client = requireClient();
+  const { data, error } = await client
+    .from("credit_purchases")
+    .select("*")
+    .eq("stripe_session_id", stripeSessionId)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(`credit_purchases.getBySession failed: ${error.code ?? error.message}`);
+  }
+  return data as CreditPurchase | null;
+}
+
+export type CompletePurchaseInput = {
+  stripeSessionId: string;
+  userId: string;
+  amountPaidCents: number;
+  creditsGranted: number;
+};
+
+export async function completeCreditPurchase(
+  input: CompletePurchaseInput,
+): Promise<CreditPurchase> {
+  const client = requireClient();
+  const { data, error } = await client.rpc("complete_credit_purchase", {
+    p_stripe_session_id: input.stripeSessionId,
+    p_user_id: input.userId,
+    p_amount_paid_cents: input.amountPaidCents,
+    p_credits_granted: input.creditsGranted,
+  });
+
+  if (error) {
+    throw new Error(`credit_purchases.complete failed: ${error.message}`);
+  }
+  return data as CreditPurchase;
 }

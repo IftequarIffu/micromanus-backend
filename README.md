@@ -11,14 +11,16 @@ bun install
 cp .env.example .env
 # Fill at least: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, SUPABASE_JWT_SECRET, ENCRYPTION_KEY
 # Optional for chat tools: TAVILY_API_KEY
+# For Stripe checkout: STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET, CHECKOUT_SUCCESS_URL, CHECKOUT_CANCEL_URL
 ```
 
 ### Supabase schema
 
 1. Open [Supabase Dashboard](https://supabase.com/dashboard) → your project → **SQL Editor**.
 2. Paste the contents of `db/schema.sql` and **Run**.
-   - This recreates `api_keys` in the BYOK shape (`user_id`, `iv`, `auth_tag`, `last_four`) and adds `record_credit_usage_and_decrement`.
-3. Verify from the repo:
+   - This recreates `api_keys` in the BYOK shape (`user_id`, `iv`, `auth_tag`, `last_four`) and adds `record_credit_usage_and_decrement` plus `complete_credit_purchase`.
+3. If you already applied an older `schema.sql`, also run `db/migrations/002_complete_credit_purchase.sql`.
+4. Verify from the repo:
 
 ```bash
 bun run db:verify
@@ -149,6 +151,45 @@ Watch the dev-server terminal for chat / LLM / search / credit logs (never key m
 | `error` | Soft failures | `{ "message": "..." }` |
 | `done` | Stream end | `{ "ok": true\|false, ... }` |
 
+## Buy credits (Stripe Checkout)
+
+Packages (defined in `src/lib/billing/packages.ts`):
+
+| packageId | Credits | Price |
+|---|---|---|
+| `starter` | 500 | $5 |
+| `standard` | 2000 | $15 |
+| `pro` | 5000 | $30 |
+
+1. Put Stripe **test** keys in `.env`: `STRIPE_SECRET_KEY`, `CHECKOUT_SUCCESS_URL`, `CHECKOUT_CANCEL_URL`.
+2. Apply `db/migrations/002_complete_credit_purchase.sql` if not already in your DB.
+3. Forward webhooks (copy the printed `whsec_…` into `STRIPE_WEBHOOK_SECRET`, then restart the API):
+
+```bash
+stripe listen --forward-to localhost:3000/webhooks/stripe
+```
+
+4. Create a Checkout session:
+
+```bash
+curl -sS -X POST http://localhost:3000/credits/checkout \
+  -H "Authorization: Bearer <SUPABASE_ACCESS_TOKEN>" \
+  -H "Content-Type: application/json" \
+  -d '{"packageId":"starter"}'
+# {"url":"https://checkout.stripe.com/...","sessionId":"cs_test_..."}
+```
+
+5. Open `url` in a browser and pay with test card `4242 4242 4242 4242` (any future expiry, any CVC).
+6. Confirm balance:
+
+```bash
+curl -sS http://localhost:3000/credits \
+  -H "Authorization: Bearer <SUPABASE_ACCESS_TOKEN>"
+# balance should increase by 500 for starter
+```
+
+Replay the same `checkout.session.completed` event — balance must not increase again.
+
 ## API surface
 
 | Method | Path | Auth |
@@ -162,9 +203,9 @@ Watch the dev-server terminal for chat / LLM / search / credit logs (never key m
 | `GET` | `/chats/:chatId` | yes |
 | `POST` | `/chats/:chatId/messages` | yes (SSE) |
 | `GET` | `/credits?chatId=` | yes |
-| `POST` | `/credits/checkout` | yes (501) |
+| `POST` | `/credits/checkout` | yes |
 | `POST` | `/credits/redeem` | yes (501) |
 | `GET` | `/models` | yes |
-| `POST` | `/webhooks/stripe` | Stripe signature (later) |
+| `POST` | `/webhooks/stripe` | Stripe signature |
 
 Note: there is no standalone create-chat route. A chat is created on `POST /chats/messages` (lazy creation). LLM keys are BYOK via `/api-keys`, not env vars.

@@ -1,11 +1,17 @@
 import type { CreditBalance, CreditUsage } from "../../db/types.ts";
+import type Stripe from "stripe";
+import { constructStripeEvent, createCheckoutSession } from "../billing/stripe.ts";
 import {
+  completeCreditPurchase,
   getCreditBalance,
+  getPurchaseBySessionId,
+  insertPendingPurchase,
   listCreditUsageForUser,
-  recordCreditUsageAndDecrement,
   type RecordUsageInput,
+  recordCreditUsageAndDecrement,
 } from "../db/repositories/credits.ts";
 import { AppError } from "../middleware/error.ts";
+import { isCreditPackageId } from "../lib/billing/packages.ts";
 
 export async function requirePositiveBalance(userId: string): Promise<CreditBalance> {
   const balance = await getCreditBalance(userId);
@@ -40,4 +46,134 @@ export async function chargeCredits(input: RecordUsageInput): Promise<CreditUsag
       `tokens in=${input.inputTokens} out=${input.outputTokens} cached=${input.cachedTokens}`,
   );
   return usage;
+}
+
+export type CreateCreditsCheckoutResult = {
+  url: string;
+  sessionId: string;
+};
+
+export async function createCreditsCheckout(
+  userId: string,
+  packageId: string,
+): Promise<CreateCreditsCheckoutResult> {
+  if (!isCreditPackageId(packageId)) {
+    throw new AppError(400, "invalid_package", "packageId must be starter, standard, or pro");
+  }
+
+  const { sessionId, url, pkg } = await createCheckoutSession({ userId, packageId });
+
+  try {
+    await insertPendingPurchase({
+      userId,
+      stripeSessionId: sessionId,
+      amountPaidCents: pkg.amountPaidCents,
+      creditsGranted: pkg.credits,
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error(
+      `credit purchase pending insert failed userId=${userId} sessionId=${sessionId} ` +
+        `packageId=${packageId} error=${message} (webhook metadata recovery may still complete)`,
+    );
+  }
+
+  console.log(
+    `checkout created userId=${userId} packageId=${packageId} sessionId=${sessionId} ` +
+      `credits=${pkg.credits} amountCents=${pkg.amountPaidCents}`,
+  );
+
+  return { url, sessionId };
+}
+
+function parsePositiveInt(value: string | undefined): number | null {
+  if (value === undefined || value === "") {
+    return null;
+  }
+  const n = Number.parseInt(value, 10);
+  if (!Number.isFinite(n) || n <= 0) {
+    return null;
+  }
+  return n;
+}
+
+function parseNonNegativeInt(value: string | undefined): number | null {
+  if (value === undefined || value === "") {
+    return null;
+  }
+  const n = Number.parseInt(value, 10);
+  if (!Number.isFinite(n) || n < 0) {
+    return null;
+  }
+  return n;
+}
+
+async function handleCheckoutSessionCompleted(session: Stripe.Checkout.Session): Promise<void> {
+  const sessionId = session.id;
+  const metadata = session.metadata ?? {};
+
+  const userId = metadata.userId || session.client_reference_id || null;
+  const creditsGranted =
+    parsePositiveInt(metadata.creditsGranted ?? undefined) ??
+    null;
+  const amountPaidCents =
+    parseNonNegativeInt(metadata.amountPaidCents ?? undefined) ??
+    (typeof session.amount_total === "number" ? session.amount_total : null);
+
+  if (!userId || creditsGranted === null || amountPaidCents === null) {
+    console.error(
+      `stripe checkout.session.completed missing fields sessionId=${sessionId} ` +
+        `hasUserId=${Boolean(userId)} credits=${creditsGranted} amount=${amountPaidCents}`,
+    );
+    return;
+  }
+
+  const existing = await getPurchaseBySessionId(sessionId);
+  if (existing && existing.user_id !== userId) {
+    console.error(
+      `stripe purchase user mismatch sessionId=${sessionId} ` +
+        `purchaseUserId=${existing.user_id} metadataUserId=${userId}`,
+    );
+    throw new AppError(400, "purchase_user_mismatch", "Purchase user does not match session metadata");
+  }
+
+  if (existing?.status === "completed") {
+    console.log(`stripe purchase already completed sessionId=${sessionId} (idempotent)`);
+    return;
+  }
+
+  const purchase = await completeCreditPurchase({
+    stripeSessionId: sessionId,
+    userId,
+    amountPaidCents,
+    creditsGranted,
+  });
+
+  console.log(
+    `stripe purchase completed sessionId=${sessionId} userId=${userId} ` +
+      `credits=${creditsGranted} status=${purchase.status} purchaseId=${purchase.id}`,
+  );
+}
+
+export async function handleStripeWebhook(
+  rawBody: Buffer,
+  signatureHeader: string | undefined,
+): Promise<{ received: true; type: string }> {
+  const event = await constructStripeEvent(rawBody, signatureHeader);
+  console.log(`stripe webhook received type=${event.type} id=${event.id}`);
+
+  try {
+    if (event.type === "checkout.session.completed") {
+      const session = event.data.object as Stripe.Checkout.Session;
+      console.log(`stripe webhook checkout.session.completed sessionId=${session.id}`);
+      await handleCheckoutSessionCompleted(session);
+    } else {
+      console.log(`stripe webhook ignored type=${event.type}`);
+    }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error(`stripe webhook handle failed type=${event.type} id=${event.id} error=${message}`);
+  }
+
+  return { received: true, type: event.type };
 }

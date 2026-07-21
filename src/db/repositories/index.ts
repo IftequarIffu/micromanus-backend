@@ -27,5 +27,10 @@ export {
   recordCreditUsageAndDecrement,
   listCreditUsageForUser,
   listCreditUsageByChatId,
+  insertPendingPurchase,
+  getPurchaseBySessionId,
+  completeCreditPurchase,
   type RecordUsageInput,
+  type InsertPendingPurchaseInput,
+  type CompletePurchaseInput,
 } from "./credits.ts";

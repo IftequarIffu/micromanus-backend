@@ -13,6 +13,8 @@ const envSchema = z.object({
 
   STRIPE_SECRET_KEY: optionalString,
   STRIPE_WEBHOOK_SECRET: optionalString,
+  CHECKOUT_SUCCESS_URL: optionalString,
+  CHECKOUT_CANCEL_URL: optionalString,
 
   ENCRYPTION_KEY: optionalString,
   ADMIN_SECRET: optionalString,

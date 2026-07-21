@@ -14,7 +14,7 @@ export function createApp(): Express {
 
   app.use(requestLog);
 
-  // Stripe needs the raw body for signature verification (implemented later).
+  // Stripe needs the raw body for signature verification.
   app.use("/webhooks/stripe", express.raw({ type: "application/json" }));
   app.use(webhooksRouter);
 

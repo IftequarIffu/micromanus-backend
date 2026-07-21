@@ -1,2 +1,7 @@
-/** Stripe billing stubs — feature prompts will flesh these out. */
-export {};
+export {
+  createCheckoutSession,
+  constructStripeEvent,
+  getStripeClient,
+  type CreateCheckoutSessionInput,
+  type CreateCheckoutSessionResult,
+} from "./stripe.ts";

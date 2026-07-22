@@ -11,6 +11,7 @@ export {
   createChatWithFirstMessage,
   requireOwnedChat,
   getChatDetail,
+  deleteOwnedChat,
   addUserMessage,
   addAssistantMessage,
   getChatHistory,

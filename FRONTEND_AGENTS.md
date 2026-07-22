@@ -116,7 +116,7 @@ Use React Query for **JSON** reads/mutations. Keep the **SSE chat stream** in de
 | `['api-keys']` | `GET /api-keys` |
 | `['credits', chatId?]` | `GET /credits` |
 | `['chat', chatId]` | `GET /chats/:chatId` |
-| mutations | `POST/DELETE /api-keys`, `POST /credits/checkout`, `POST /credits/redeem` |
+| mutations | `POST/DELETE /api-keys`, `DELETE /chats/:chatId`, `POST /credits/checkout`, `POST /credits/redeem` |
 
 Invalidate `['credits']` after successful chat `done`, checkout return, and redeem. Invalidate `['api-keys']` after save/delete. Invalidate `['chat', chatId]` after a successful follow-up `done` if you are not merging SSE into local cache yourself.
 
@@ -154,12 +154,12 @@ With a proxy, the browser calls same-origin paths (e.g. `fetch("/models")`). Wit
 | ----------------------- | ---------------- | ---------------------------------------------------------------- |
 | Login (Google / GitHub) | `/login`         | Supabase Auth → then `GET /me`                                   |
 | New chat composer       | `/` or `/new`    | `POST /chats/messages` (SSE)                                     |
-| Existing chat           | `/chat/:chatId`  | `GET /chats/:chatId`, `POST /chats/:chatId/messages`             |
+| Existing chat           | `/chat/:chatId`  | `GET /chats/:chatId`, `POST /chats/:chatId/messages`, `DELETE /chats/:chatId` |
 | Model picker            | composer         | `GET /models`                                                    |
 | BYOK keys               | `/settings/keys` | `GET/POST/DELETE /api-keys`                                      |
 | Credits                 | `/credits`       | `GET /credits`, `POST /credits/checkout`, `POST /credits/redeem` |
 | Citations               | chat view        | SSE `done.sources` + `GET /chats/:chatId` `sources`              |
-| PDF from tools          | chat view        | SSE `pdf_ready` / `done.pdf`                                     |
+| PDF from tools          | chat view        | SSE `pdf_ready` / `done.pdf` + `GET /chats/:chatId` message `pdf` |
 
 
 
@@ -188,7 +188,7 @@ Optional: `/settings` layout wrapping keys. Protect all non-login routes with an
 | Composer | AI Elements `Prompt Input` | Textarea + send; disable while streaming |
 | Model picker | AI Elements `Model Selector` | Options from `GET /models` (`label` / `id`) |
 | Citations | AI Elements `Sources` / Inline Citation | Per-assistant-message sources |
-| PDF / tool result | AI Elements `Tool` or small Artifact-style chip | Link from `pdf_ready` / `done.pdf` |
+| PDF / tool result | AI Elements `Tool` or small Artifact-style chip | **Download PDF** from `pdf_ready` / `done.pdf` / message `pdf` |
 
 ### App chrome (shadcn/ui)
 
@@ -196,7 +196,7 @@ Optional: `/settings` layout wrapping keys. Protect all non-login routes with an
 | --- | --- |
 | `AuthProvider` / session gate | Hold Supabase session; redirect unauthenticated users to `/login` |
 | `AppShell` | Sidebar + top bar (balance badge, settings link) — shadcn layout primitives |
-| `ChatSidebar` | Client-side list of chats (localStorage — see §7) |
+| `ChatSidebar` | Client-side list of chats (localStorage — see §7); delete removes server chat + local item |
 | `CreditBadge` | Remaining balance from React Query `['credits']` |
 | `ApiKeyForm` | Provider select + key input; list shows `••••{last_four}` |
 | `CheckoutPackages` | Cards for `starter` / `standard` / `pro` |
@@ -325,6 +325,8 @@ No `chat_created` event on this route.
 
 `GET /chats/:chatId` → messages, sources, usage. Group `sources` by `message_id` for citation UI.
 
+Each message may include optional `pdf?: { url, filename }` (freshly signed, ~24h) when that assistant turn produced a PDF. Map it onto the UI message so a **Download PDF** control works after reload — do not rely only on live SSE.
+
 Wrong owner / missing chat → `404` `chat_not_found` (treat as not found; do not show “forbidden”).
 
 ## 7.4 Chat sidebar without `GET /chats`
@@ -340,6 +342,8 @@ type ChatListItem = {
 ```
 
 Update on `chat_created` and after successful `done`. Opening a chat still hydrates from `GET /chats/:chatId`. Clearing storage only loses the sidebar, not server data.
+
+**Delete:** sidebar trash → confirm → `DELETE /chats/:chatId` (204). On success, remove the local list item, clear stream state if that chat was open, and navigate to `/new`. Server removes the chat row (messages/sources/usage cascade) and Storage PDFs under `chat-pdfs/{userId}/{chatId}/`.
 
 ## 7.5 Prerequisites before send
 
@@ -416,7 +420,7 @@ If auth/credits/key/validation fail **before** SSE starts, the response is norma
 
 ### PDF URLs
 
-Signed Supabase Storage URLs, ~**24h** expiry. Show a download link; do not assume permanent storage in the frontend. There is no “re-sign PDF” API yet.
+Signed Supabase Storage URLs, ~**24h** expiry. Show a **Download PDF** control from `pdf_ready`, `done.pdf`, or `message.pdf` on hydrate. Re-sign happens server-side on `GET /chats/:chatId` — there is no separate “re-sign PDF” API.
 
 ---
 
@@ -451,8 +455,8 @@ Current catalog (use `id` in message bodies):
 
 | id                           | provider | label             |
 | ---------------------------- | -------- | ----------------- |
-| `gpt-5-mini`                 | openai   | GPT-5 Mini        |
-| `gpt-4.1-mini`               | openai   | GPT-4.1 Mini      |
+| `gpt-5.4-mini`               | openai   | GPT-5.4 Mini      |
+| `gpt-5.4-nano`               | openai   | GPT-5.4 Nano      |
 | `claude-sonnet-4-5-20250929` | claude   | Claude Sonnet 4.5 |
 | `claude-sonnet-4-20250514`   | claude   | Claude Sonnet 4   |
 | `gemini-2.5-flash`           | gemini   | Gemini 2.5 Flash  |
@@ -485,7 +489,7 @@ Never expect ciphertext or full key.
 **POST** `/chats/messages` (new chat)
 
 ```json
-{ "content": "Hello", "model": "gpt-5-mini" }
+{ "content": "Hello", "model": "gpt-5.4-mini" }
 ```
 
 → SSE (see §8)
@@ -531,6 +535,10 @@ Same body → SSE without `chat_created`
   }>;
 }
 ```
+
+**DELETE** `/chats/:chatId` → `204` empty body
+
+Permanently deletes the chat for the authenticated owner: messages, sources, per-chat credit usage rows (Postgres cascade), and PDF objects in the `chat-pdfs` bucket for that chat. Wrong owner / missing → `404` `chat_not_found`.
 
 
 

@@ -55,3 +55,22 @@ export async function getChatOwnedByUser(chatId: string, userId: string): Promis
   }
   return data as Chat | null;
 }
+
+/**
+ * Delete a chat owned by userId. Cascades messages, sources, credit_usage in Postgres.
+ * Returns true if a row was deleted.
+ */
+export async function deleteChatOwnedByUser(chatId: string, userId: string): Promise<boolean> {
+  const client = requireClient();
+  const { data, error } = await client
+    .from("chats")
+    .delete()
+    .eq("id", chatId)
+    .eq("user_id", userId)
+    .select("id");
+
+  if (error) {
+    throw new Error(`chats.delete failed: ${error.code ?? error.message}`);
+  }
+  return (data?.length ?? 0) > 0;
+}

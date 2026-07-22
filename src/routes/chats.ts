@@ -7,6 +7,7 @@ import { resolveModel } from "../orchestration/models.ts";
 import {
   addUserMessage,
   createChatWithFirstMessage,
+  deleteOwnedChat,
   getChatDetail,
   getChatHistory,
   requireOwnedChat,
@@ -124,6 +125,24 @@ chatsRouter.get("/chats/:chatId", async (req, res, next) => {
       sources: detail.sources,
       usage: detail.usage,
     });
+  } catch (err) {
+    if (sendAppError(res, err)) {
+      return;
+    }
+    next(err);
+  }
+});
+
+/**
+ * Permanently delete a chat owned by the caller (messages + sources + usage cascade;
+ * PDFs under chat-pdfs/{userId}/{chatId}/ are removed).
+ */
+chatsRouter.delete("/chats/:chatId", async (req, res, next) => {
+  try {
+    const userId = authedUserId(req);
+    const chatId = String(req.params.chatId ?? "");
+    await deleteOwnedChat(chatId, userId);
+    res.status(204).end();
   } catch (err) {
     if (sendAppError(res, err)) {
       return;

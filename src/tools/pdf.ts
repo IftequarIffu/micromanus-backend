@@ -61,7 +61,7 @@ export const createPdfOutputSchema = z.object({
 
 export type CreatePdfOutput = z.infer<typeof createPdfOutputSchema>;
 
-export type PdfCreatedMeta = Pick<CreatePdfOutput, "url" | "filename">;
+export type PdfCreatedMeta = Pick<CreatePdfOutput, "url" | "filename" | "path">;
 
 function renderPdfBuffer(input: CreatePdfInput): Promise<{ buffer: Buffer; pages: number }> {
   return new Promise((resolve, reject) => {
@@ -76,12 +76,13 @@ function renderPdfBuffer(input: CreatePdfInput): Promise<{ buffer: Buffer; pages
     });
 
     const chunks: Buffer[] = [];
+    // PDFKit clears bufferedPageRange() after end() — capture count before ending.
+    let pages = 0;
     doc.on("data", (chunk: Buffer) => {
       chunks.push(chunk);
     });
     doc.on("end", () => {
-      const range = doc.bufferedPageRange();
-      resolve({ buffer: Buffer.concat(chunks), pages: range.count });
+      resolve({ buffer: Buffer.concat(chunks), pages });
     });
     doc.on("error", reject);
 
@@ -180,10 +181,14 @@ function renderPdfBuffer(input: CreatePdfInput): Promise<{ buffer: Buffer; pages
       doc.moveDown(0.55);
     }
 
+    // Stamp footers without triggering PDFKit auto page-breaks in the bottom margin.
     const range = doc.bufferedPageRange();
+    pages = Math.max(range.count, 1);
     for (let i = 0; i < range.count; i++) {
       doc.switchToPage(range.start + i);
-      const bottom = doc.page.height - 36;
+      const oldBottom = doc.page.margins.bottom;
+      doc.page.margins.bottom = 0;
+      const bottom = doc.page.height - oldBottom / 2;
       doc
         .fontSize(8)
         .fillColor("#666666")
@@ -192,6 +197,7 @@ function renderPdfBuffer(input: CreatePdfInput): Promise<{ buffer: Buffer; pages
           align: "center",
           lineBreak: false,
         });
+      doc.page.margins.bottom = oldBottom;
     }
     doc.fillColor("#000000");
     doc.end();
@@ -208,9 +214,11 @@ export type CreatePdfToolOptions = {
 /**
  * PDF creation tool for AI SDK tool-calling.
  * Does not write to Postgres — returns a signed Storage URL only.
+ * At most one upload per tool instance (per chat completion request).
  */
 export function createPdfTool(options: CreatePdfToolOptions) {
   const { userId, chatId, onCreated } = options;
+  let cached: CreatePdfOutput | undefined;
 
   return tool({
     description:
@@ -218,25 +226,40 @@ export function createPdfTool(options: CreatePdfToolOptions) {
       `Required: at least ${MIN_SECTIONS} sections, each with ≥${MIN_SECTION_BODY} characters of multi-paragraph analysis (not bullet stubs). ` +
       "Required: sources array with title+url taken from prior web_search (Tavily) results — do not invent URLs. " +
       "Use after 2+ web_search calls covering different angles of the topic. " +
+      "Call at most once per assistant reply — repeated calls return the same file. " +
       "Layout includes title page, contents, one section start per page, and a sources page — aim for a thorough 5+ page report. " +
       "Returns a temporary download URL.",
     inputSchema: createPdfInputSchema,
     execute: async (input) => {
-      const filename = sanitizePdfFilename(input.filename);
-      const { buffer: pdfBytes, pages } = await renderPdfBuffer(input);
-      const uploaded = await uploadChatPdf({
-        userId,
-        chatId,
-        filename,
-        bytes: pdfBytes,
-      });
+      if (cached) {
+        console.log(
+          `pdf tool skipped duplicate upload chatId=${chatId} path=${cached.path} pages=${cached.pages}`,
+        );
+        return cached;
+      }
 
-      const parsed = createPdfOutputSchema.parse({ ...uploaded, pages });
-      console.log(
-        `pdf tool invoked chatId=${chatId} bytes=${parsed.bytes} pages=${parsed.pages} path=${parsed.path} sections=${input.sections.length} sources=${input.sources.length}`,
-      );
-      onCreated?.({ url: parsed.url, filename: parsed.filename });
-      return parsed;
+      try {
+        const filename = sanitizePdfFilename(input.filename);
+        const { buffer: pdfBytes, pages } = await renderPdfBuffer(input);
+        const uploaded = await uploadChatPdf({
+          userId,
+          chatId,
+          filename,
+          bytes: pdfBytes,
+        });
+
+        const parsed = createPdfOutputSchema.parse({ ...uploaded, pages });
+        cached = parsed;
+        console.log(
+          `pdf tool invoked chatId=${chatId} bytes=${parsed.bytes} pages=${parsed.pages} path=${parsed.path} sections=${input.sections.length} sources=${input.sources.length}`,
+        );
+        onCreated?.({ url: parsed.url, filename: parsed.filename, path: parsed.path });
+        return parsed;
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "pdf_failed";
+        console.error(`pdf tool failed chatId=${chatId} message=${msg}`);
+        throw err;
+      }
     },
   });
 }

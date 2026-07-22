@@ -137,3 +137,99 @@ export async function uploadChatPdf(params: {
     bytes: params.bytes.length,
   };
 }
+
+/**
+ * Re-sign an existing object path in chat-pdfs (e.g. when hydrating a chat).
+ * Returns null if signing fails — callers should omit pdf rather than fail the request.
+ */
+export async function createChatPdfSignedUrl(path: string): Promise<string | null> {
+  const supabase = getSupabaseClient();
+  if (!supabase) {
+    return null;
+  }
+
+  const trimmed = path.trim();
+  if (!trimmed || trimmed.includes("..") || trimmed.startsWith("/")) {
+    return null;
+  }
+
+  const { data: signed, error: signError } = await supabase.storage
+    .from(CHAT_PDFS_BUCKET)
+    .createSignedUrl(trimmed, PDF_SIGNED_URL_SECONDS);
+
+  if (signError || !signed?.signedUrl) {
+    console.error(
+      `PDF re-sign failed path=${trimmed} message=${signError?.message ?? "missing url"}`,
+    );
+    return null;
+  }
+
+  return signed.signedUrl;
+}
+
+/**
+ * Delete all PDF objects for a chat. Paths are always `{userId}/{chatId}/…`.
+ * Also removes any explicit message storage paths (covers legacy/orphan names).
+ * Returns number of objects removed; logs and continues on storage errors.
+ */
+export async function deleteChatPdfs(params: {
+  userId: string;
+  chatId: string;
+  /** Extra object paths from message rows (must stay under userId/chatId). */
+  extraPaths?: string[];
+}): Promise<number> {
+  const supabase = getSupabaseClient();
+  if (!supabase) {
+    return 0;
+  }
+
+  const prefix = `${params.userId}/${params.chatId}`;
+  const paths = new Set<string>();
+
+  for (const raw of params.extraPaths ?? []) {
+    const trimmed = raw.trim();
+    if (
+      trimmed &&
+      !trimmed.includes("..") &&
+      !trimmed.startsWith("/") &&
+      trimmed.startsWith(`${prefix}/`)
+    ) {
+      paths.add(trimmed);
+    }
+  }
+
+  const { data: listed, error: listError } = await supabase.storage
+    .from(CHAT_PDFS_BUCKET)
+    .list(prefix, { limit: 1000 });
+
+  if (listError) {
+    console.error(
+      `PDF list failed prefix=${prefix} message=${listError.message}`,
+    );
+  } else {
+    for (const item of listed ?? []) {
+      if (item.name) {
+        paths.add(`${prefix}/${item.name}`);
+      }
+    }
+  }
+
+  if (paths.size === 0) {
+    return 0;
+  }
+
+  const toRemove = [...paths];
+  const { error: removeError } = await supabase.storage
+    .from(CHAT_PDFS_BUCKET)
+    .remove(toRemove);
+
+  if (removeError) {
+    console.error(
+      `PDF remove failed prefix=${prefix} count=${toRemove.length} message=${removeError.message}`,
+    );
+    return 0;
+  }
+
+  console.log(`pdfs deleted chatId=${params.chatId} count=${toRemove.length}`);
+  return toRemove.length;
+}

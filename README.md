@@ -19,9 +19,10 @@ cp .env.example .env
 1. Open [Supabase Dashboard](https://supabase.com/dashboard) → your project → **SQL Editor**.
 2. Paste the contents of `db/schema.sql` and **Run**.
    - This recreates `api_keys` in the BYOK shape (`user_id`, `iv`, `auth_tag`, `last_four`) and adds `record_credit_usage_and_decrement`, `complete_credit_purchase`, and `redeem_coupon`.
-3. If you already applied an older `schema.sql`, also run the pending files under `db/migrations/` in order (`002_complete_credit_purchase.sql`, `003_redeem_coupon.sql`, then `004_chat_pdfs_bucket.sql`).
+3. If you already applied an older `schema.sql`, also run the pending files under `db/migrations/` in order (`002_complete_credit_purchase.sql`, `003_redeem_coupon.sql`, `004_chat_pdfs_bucket.sql`, then `005_messages_pdf_meta.sql`).
 4. **Storage (PDF tool):** `004_chat_pdfs_bucket.sql` (or a full `schema.sql` apply) creates private bucket `chat-pdfs` + `ensure_chat_pdfs_bucket` RPC. The API calls that RPC before each PDF upload. You can also create the bucket in Dashboard → **Storage** → **New bucket** → `chat-pdfs` → **Private**.
-5. Verify from the repo:
+5. **PDF meta on messages:** `005_messages_pdf_meta.sql` adds `messages.pdf_storage_path` / `pdf_filename` so `GET /chats/:id` can re-sign a download URL after reload.
+6. Verify from the repo:
 
 ```bash
 bun run db:verify
@@ -125,7 +126,7 @@ curl -sS -N http://localhost:3000/chats/messages \
   -H "Authorization: Bearer <SUPABASE_ACCESS_TOKEN>" \
   -H "Content-Type: application/json" \
   -H "Accept: text/event-stream" \
-  -d '{"content":"Say hello in one sentence.","model":"gpt-5-mini"}'
+  -d '{"content":"Say hello in one sentence.","model":"gpt-5.4-mini"}'
 
 # New chat whose first message asks for a PDF (lazy create + tools)
 # Needs TAVILY_API_KEY + private Storage bucket chat-pdfs
@@ -134,16 +135,20 @@ curl -sS -N http://localhost:3000/chats/messages \
   -H "Authorization: Bearer <SUPABASE_ACCESS_TOKEN>" \
   -H "Content-Type: application/json" \
   -H "Accept: text/event-stream" \
-  -d '{"content":"Generate a short PDF report on the latest Russia-Ukraine war news with sources.","model":"gpt-5-mini"}'
+  -d '{"content":"Generate a short PDF report on the latest Russia-Ukraine war news with sources.","model":"gpt-5.4-mini"}'
 
 # Follow-up in an existing chat (replace CHAT_ID from chat_created)
 curl -sS -N http://localhost:3000/chats/<CHAT_ID>/messages \
   -H "Authorization: Bearer <SUPABASE_ACCESS_TOKEN>" \
   -H "Content-Type: application/json" \
   -H "Accept: text/event-stream" \
-  -d '{"content":"What did I just ask you?","model":"gpt-5-mini"}'
+  -d '{"content":"What did I just ask you?","model":"gpt-5.4-mini"}'
 
-curl -sS http://localhost:3000/chats/<CHAT_ID> \
+curl -sS http://localhost:4000/chats/<CHAT_ID> \
+  -H "Authorization: Bearer <SUPABASE_ACCESS_TOKEN>"
+
+# Permanently delete chat + messages + PDFs (204)
+curl -sS -o /dev/null -w "%{http_code}\n" -X DELETE http://localhost:4000/chats/<CHAT_ID> \
   -H "Authorization: Bearer <SUPABASE_ACCESS_TOKEN>"
 
 curl -sS "http://localhost:3000/credits?chatId=<CHAT_ID>" \
@@ -162,7 +167,7 @@ Watch the dev-server terminal for chat / LLM / search / pdf / credit logs (never
 | `error` | Soft failures | `{ "message": "..." }` |
 | `done` | Stream end | `{ "ok": true\|false, "chatId": "...", "pdf"?: { "url", "filename" }, ... }` |
 
-Signed PDF URLs expire after **24 hours**. Open `url` from `pdf_ready` / `done.pdf` in a browser to download. Confirm the object under Storage → `chat-pdfs` → `{userId}/{chatId}/…`. PDF works on **both** `POST /chats/messages` (new chat) and `POST /chats/:chatId/messages` (existing chat).
+Signed PDF URLs expire after **24 hours**. Open `url` from `pdf_ready` / `done.pdf` in a browser to download. Confirm the object under Storage → `chat-pdfs` → `{userId}/{chatId}/…` (one object per successful report; duplicate tool calls reuse the first upload). After reload, `GET /chats/:chatId` returns a fresh signed `pdf` on the assistant message when one was stored. PDF works on **both** `POST /chats/messages` (new chat) and `POST /chats/:chatId/messages` (existing chat).
 
 ## Buy credits (Stripe Checkout)
 

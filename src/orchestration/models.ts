@@ -12,8 +12,8 @@ export type ModelDefinition = {
  * ids must match what createOpenAI / createAnthropic / createGoogle accept.
  */
 export const AVAILABLE_MODELS: readonly ModelDefinition[] = [
-  { id: "gpt-5-mini", provider: "openai", label: "GPT-5 Mini" },
-  { id: "gpt-4.1-mini", provider: "openai", label: "GPT-4.1 Mini" },
+  { id: "gpt-5.4-mini", provider: "openai", label: "GPT-5.4 Mini" },
+  { id: "gpt-5.4-nano", provider: "openai", label: "GPT-5.4 Nano" },
   { id: "claude-sonnet-4-5-20250929", provider: "claude", label: "Claude Sonnet 4.5" },
   { id: "claude-sonnet-4-20250514", provider: "claude", label: "Claude Sonnet 4" },
   { id: "gemini-2.5-flash", provider: "gemini", label: "Gemini 2.5 Flash" },

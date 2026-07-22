@@ -1,8 +1,19 @@
-import type { Chat, CreditUsage, Message, Source } from "../../db/types.ts";
-import { createChat, getChatOwnedByUser } from "../db/repositories/chats.ts";
-import { insertMessage, listMessagesByChatId } from "../db/repositories/messages.ts";
+import type {
+  Chat,
+  CreditUsage,
+  Message,
+  MessagePublic,
+  Source,
+} from "../../db/types.ts";
+import { createChat, deleteChatOwnedByUser, getChatOwnedByUser } from "../db/repositories/chats.ts";
+import {
+  insertMessage,
+  listMessagesByChatId,
+  updateMessagePdfMeta,
+} from "../db/repositories/messages.ts";
 import { insertSources, listSourcesByChatId } from "../db/repositories/sources.ts";
 import { listCreditUsageByChatId } from "../db/repositories/credits.ts";
+import { createChatPdfSignedUrl, deleteChatPdfs } from "../lib/storage/pdfs.ts";
 import { AppError } from "../middleware/error.ts";
 
 const TITLE_MAX = 80;
@@ -53,8 +64,19 @@ export async function addAssistantMessage(
   chatId: string,
   content: string,
   model: string,
+  pdf?: { storagePath: string; filename: string },
 ): Promise<Message> {
-  return insertMessage({ chatId, role: "assistant", content, model });
+  const message = await insertMessage({ chatId, role: "assistant", content, model });
+  if (!pdf) {
+    return message;
+  }
+  try {
+    return await updateMessagePdfMeta(message.id, pdf);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "update_pdf_meta_failed";
+    console.error(`assistant pdf meta failed messageId=${message.id} message=${msg}`);
+    return message;
+  }
 }
 
 export async function getChatHistory(chatId: string): Promise<Message[]> {
@@ -63,10 +85,38 @@ export async function getChatHistory(chatId: string): Promise<Message[]> {
 
 export type ChatDetail = {
   chat: Chat;
-  messages: Message[];
+  messages: MessagePublic[];
   sources: Source[];
   usage: CreditUsage[];
 };
+
+function toPublicMessageBase(m: Message): Omit<MessagePublic, "pdf"> {
+  return {
+    id: m.id,
+    chat_id: m.chat_id,
+    role: m.role,
+    content: m.content,
+    model: m.model,
+    created_at: m.created_at,
+  };
+}
+
+async function toPublicMessage(m: Message): Promise<MessagePublic> {
+  const base = toPublicMessageBase(m);
+  if (!m.pdf_storage_path || !m.pdf_filename) {
+    return base;
+  }
+
+  const url = await createChatPdfSignedUrl(m.pdf_storage_path);
+  if (!url) {
+    return base;
+  }
+
+  return {
+    ...base,
+    pdf: { url, filename: m.pdf_filename },
+  };
+}
 
 export async function getChatDetail(chatId: string, userId: string): Promise<ChatDetail> {
   const chat = await requireOwnedChat(chatId, userId);
@@ -75,7 +125,35 @@ export async function getChatDetail(chatId: string, userId: string): Promise<Cha
     listSourcesByChatId(chatId),
     listCreditUsageByChatId(chatId),
   ]);
-  return { chat, messages, sources, usage };
+  const publicMessages = await Promise.all(messages.map((m) => toPublicMessage(m)));
+  return { chat, messages: publicMessages, sources, usage };
+}
+
+/**
+ * Permanently delete an owned chat: Storage PDFs under the chat prefix, then the
+ * chat row (messages/sources/usage cascade in Postgres).
+ */
+export async function deleteOwnedChat(chatId: string, userId: string): Promise<void> {
+  await requireOwnedChat(chatId, userId);
+
+  const messages = await listMessagesByChatId(chatId);
+  const extraPaths = messages
+    .map((m) => m.pdf_storage_path)
+    .filter((p): p is string => typeof p === "string" && p.length > 0);
+
+  try {
+    await deleteChatPdfs({ userId, chatId, extraPaths });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "pdf_delete_failed";
+    console.error(`chat pdf cleanup failed chatId=${chatId} message=${msg}`);
+  }
+
+  const deleted = await deleteChatOwnedByUser(chatId, userId);
+  if (!deleted) {
+    throw new AppError(404, "chat_not_found", "Chat not found");
+  }
+
+  console.log(`chat deleted userId=${userId} chatId=${chatId}`);
 }
 
 export async function persistSourcesForMessage(

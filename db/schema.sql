@@ -60,6 +60,9 @@ create table if not exists messages (
   role message_role not null,
   content text not null,
   model text,
+  -- Internal Storage object path for a PDF created during this assistant turn (never expose raw to clients).
+  pdf_storage_path text,
+  pdf_filename text,
   created_at timestamptz not null default now()
 );
 

@@ -24,7 +24,21 @@ export type Message = {
   role: MessageRole;
   content: string;
   model: string | null;
+  /** Internal chat-pdfs object path; omit from client responses. */
+  pdf_storage_path: string | null;
+  pdf_filename: string | null;
   created_at: string;
+};
+
+/** Client-facing message; signed PDF URL only when available. */
+export type MessagePublic = {
+  id: string;
+  chat_id: string;
+  role: MessageRole;
+  content: string;
+  model: string | null;
+  created_at: string;
+  pdf?: { url: string; filename: string };
 };
 
 export type Source = {

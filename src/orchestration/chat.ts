@@ -24,6 +24,8 @@ import { resolveModel, type ModelDefinition } from "./models.ts";
 
 export function writeSse(res: Response, event: string, data: unknown): void {
   res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+  const flushable = res as Response & { flush?: () => void };
+  flushable.flush?.();
 }
 
 export function initSse(res: Response): void {
@@ -160,8 +162,8 @@ export async function streamChatCompletion(params: StreamChatParams): Promise<vo
         "Use the web_search tool (Tavily) whenever current information or citations would help — do not invent news or URLs. " +
         "When the user asks for a PDF, report, or downloadable document: " +
         "(1) call web_search at least twice with different queries/angles to gather Tavily sources; " +
-        "(2) call create_pdf with a real title, at least 5 detailed sections (each several paragraphs of analysis grounded in the search results — never short stubs), " +
-        "and a sources list whose title+url pairs come only from those web_search results; " +
+        "(2) call create_pdf exactly once with a real title, at least 5 detailed sections (each several paragraphs of analysis grounded in the search results — never short stubs), " +
+        "and a sources list whose title+url pairs come only from those web_search results — do not call create_pdf again to revise the same report; " +
         "(3) in your final reply, briefly summarize and include the download URL. Be accurate; prefer depth for PDF reports.",
       onError: ({ error }) => {
         streamError = error;
@@ -208,7 +210,14 @@ export async function streamChatCompletion(params: StreamChatParams): Promise<vo
       return;
     }
 
-    const assistantMessage = await addAssistantMessage(chatId, text, modelId);
+    const assistantMessage = await addAssistantMessage(
+      chatId,
+      text,
+      modelId,
+      lastPdf
+        ? { storagePath: lastPdf.path, filename: lastPdf.filename }
+        : undefined,
+    );
 
     if (collectedSources.length > 0) {
       await persistSourcesForMessage(
@@ -244,7 +253,9 @@ export async function streamChatCompletion(params: StreamChatParams): Promise<vo
       messageId: assistantMessage.id,
       usage: { inputTokens, outputTokens, cachedTokens, creditsCharged },
       sources: collectedSources.map((s) => ({ title: s.title, url: s.url })),
-      ...(lastPdf ? { pdf: lastPdf } : {}),
+      ...(lastPdf
+        ? { pdf: { url: lastPdf.url, filename: lastPdf.filename } }
+        : {}),
     });
     res.end();
   } catch (err) {

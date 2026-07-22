@@ -10,6 +10,7 @@ export {
   createChat,
   getChatById,
   getChatOwnedByUser,
+  deleteChatOwnedByUser,
   type CreateChatInput,
 } from "./chats.ts";
 export {

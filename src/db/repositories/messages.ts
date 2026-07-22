@@ -48,3 +48,24 @@ export async function listMessagesByChatId(chatId: string): Promise<Message[]> {
   }
   return (data ?? []) as Message[];
 }
+
+export async function updateMessagePdfMeta(
+  messageId: string,
+  pdf: { storagePath: string; filename: string },
+): Promise<Message> {
+  const client = requireClient();
+  const { data, error } = await client
+    .from("messages")
+    .update({
+      pdf_storage_path: pdf.storagePath,
+      pdf_filename: pdf.filename,
+    })
+    .eq("id", messageId)
+    .select("*")
+    .single();
+
+  if (error) {
+    throw new Error(`messages.updatePdfMeta failed: ${error.code ?? error.message}`);
+  }
+  return data as Message;
+}

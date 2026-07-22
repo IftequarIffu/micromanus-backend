@@ -30,18 +30,15 @@ Implement **buy platform credits with Stripe**: authenticated users create a Che
 
 1. **One-time Checkout Sessions only** (not PaymentIntents, not subscriptions). Mode `payment`. Omit `payment_method_types` (dynamic payment methods per Stripe skill).
 2. **Stripe API version:** initialize the Node SDK with `apiVersion: "2026-06-24.dahlia"` (latest per skill). Pass `integration_identifier` on `checkout.sessions.create` with a stable prefix + 8 random letters (e.g. `micromanus_checkout_<8chars>`).
-3. **Credit packages live in code**, not Stripe Dashboard Price IDs — use Checkout `line_items[].price_data` so local/dev works without pre-created Products. Centralize packages in e.g. `src/lib/billing/packages.ts`:
+3. **Dynamic credit pricing lives in code**, not Stripe Dashboard Price IDs — use Checkout `line_items[].price_data` so local/dev works without pre-created Products. Centralize pricing in e.g. `src/lib/billing/packages.ts`:
 
-   | `packageId` | credits | amount (USD cents) | label |
-   |---|---|---|---|
-   | `starter` | 500 | 500 ($5) | Starter |
-   | `standard` | 2000 | 1500 ($15) | Standard |
-   | `pro` | 5000 | 3000 ($30) | Pro |
+   - **$1 per credit** (`unit_amount: 100`, `quantity: credits`)
+   - **Minimum 5 credits** per checkout
 
-   Request body: `{ "packageId": "starter" }` (Zod-validated). Unknown id → `400`.
+   Request body: `{ "credits": 5 }` (Zod-validated integer). Below minimum → `400` `invalid_credits`.
 4. **Checkout → DB → URL flow:**
-   1. Validate package + require Stripe env configured (else `503`).
-   2. Create Checkout Session with `metadata`: `userId`, `packageId`, `creditsGranted` (string), `amountPaidCents` (string); `client_reference_id` = `userId`.
+   1. Validate credits (≥ 5) + require Stripe env configured (else `503`).
+   2. Create Checkout Session with `metadata`: `userId`, `creditsGranted` (string), `amountPaidCents` (string); `client_reference_id` = `userId`.
    3. Insert `credit_purchases` row: `status: pending`, `stripe_session_id`, `user_id`, `amount_paid_cents`, `credits_granted`.
    4. Return `{ url, sessionId }` to the client (never create/charge inline in the route).
 5. **Success / cancel URLs** from env (add to `.env.example` + `env.ts`):

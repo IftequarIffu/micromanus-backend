@@ -173,7 +173,7 @@ With a proxy, the browser calls same-origin paths (e.g. `fetch("/models")`). Wit
 | `/` or `/new`    | Empty composer only — **nothing persisted** until first send            |
 | `/chat/:chatId`  | Message list + composer; hydrate via `GET /chats/:chatId`               |
 | `/settings/keys` | Save / list (masked) / delete provider keys                             |
-| `/credits`       | Balance, buy packages, redeem coupon; handle `?checkout=success|cancel` |
+| `/credits`       | Balance, buy credits, redeem coupon; handle `?checkout=success|cancel` |
 
 
 Optional: `/settings` layout wrapping keys. Protect all non-login routes with an auth gate.
@@ -199,7 +199,7 @@ Optional: `/settings` layout wrapping keys. Protect all non-login routes with an
 | `ChatSidebar` | Client-side list of chats (localStorage — see §7); delete removes server chat + local item |
 | `CreditBadge` | Remaining balance from React Query `['credits']` |
 | `ApiKeyForm` | Provider select + key input; list shows `••••{last_four}` |
-| `CheckoutPackages` | Cards for `starter` / `standard` / `pro` |
+| `BuyCreditsForm` | Amount input (≥ 5 credits at $1 each) → Stripe Checkout |
 | `CouponForm` | Code input → redeem |
 | Toasts | shadcn Sonner/Toast — map `{ error, code }` and SSE `error` events |
 
@@ -553,18 +553,12 @@ Permanently deletes the chat for the authenticated owner: messages, sources, per
 **POST** `/credits/checkout`
 
 ```json
-{ "packageId": "starter" }
+{ "credits": 5 }
 ```
 
-`packageId`: `starter` | `standard` | `pro`
-
-
-| packageId  | credits | price  |
-| ---------- | ------- | ------ |
-| `starter`  | 500     | $5.00  |
-| `standard` | 2000    | $15.00 |
-| `pro`      | 5000    | $30.00 |
-
+- **$1 per credit** (`amountPaidCents = credits × 100`)
+- **Minimum 5 credits** per checkout (`credits` must be an integer ≥ 5)
+- Below minimum or non-integer → `400` `invalid_credits`
 
 → `{ url: string, sessionId: string }`  
 Frontend: `window.location.assign(url)`.
@@ -582,7 +576,7 @@ Show a success/cancel banner; refetch balance. Do not call Stripe from the clien
 ```
 
 → `{ code, creditsGranted, balance }`  
-Codes are trimmed/uppercased server-side.
+Welcome coupon grants **5** credits (`creditsGranted: 5`). Codes are trimmed/uppercased server-side.
 
 ## 9.7 Webhooks
 
@@ -601,7 +595,7 @@ Codes are trimmed/uppercased server-side.
 | 400    | `invalid_provider` / `invalid_api_key`                    | Key form error        |
 | 400    | `api_key_not_configured`                                  | CTA → settings/keys   |
 | 400    | `unknown_model`                                           | Refresh models list   |
-| 400    | `invalid_package`                                         | Refresh packages      |
+| 400    | `invalid_credits`                                         | Enter ≥ 5 credits     |
 | 400    | `coupon_inactive` / `coupon_expired` / `coupon_exhausted` | Coupon error          |
 | 401    | `unauthorized`                                            | Re-login              |
 | 402    | `insufficient_credits`                                    | CTA → credits         |
@@ -692,7 +686,7 @@ sequenceDiagram
 2. API client + Vite proxy + `useQuery(['me'])`
 3. Install AI Elements (Conversation, Message, Prompt Input, Model Selector, Sources at minimum)
 4. Settings: API keys CRUD (shadcn forms + React Query mutations)
-5. Credits page: balance, packages, redeem, checkout redirect + return query
+5. Credits page: balance, buy credits (min 5 @ $1), redeem, checkout redirect + return query
 6. `/new` composer with Prompt Input + Model Selector; SSE client + `chat_created` navigation
 7. `/chat/:chatId` hydrate via React Query + follow-up messages; Conversation/Message streaming
 8. Sources + PDF chip + credit badge

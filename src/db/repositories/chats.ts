@@ -56,6 +56,21 @@ export async function getChatOwnedByUser(chatId: string, userId: string): Promis
   return data as Chat | null;
 }
 
+/** All chats owned by userId, newest first. */
+export async function listChatsByUserId(userId: string): Promise<Chat[]> {
+  const client = requireClient();
+  const { data, error } = await client
+    .from("chats")
+    .select("*")
+    .eq("user_id", userId)
+    .order("created_at", { ascending: false });
+
+  if (error) {
+    throw new Error(`chats.listByUser failed: ${error.code ?? error.message}`);
+  }
+  return (data ?? []) as Chat[];
+}
+
 /**
  * Delete a chat owned by userId. Cascades messages, sources, credit_usage in Postgres.
  * Returns true if a row was deleted.

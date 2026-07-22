@@ -27,7 +27,7 @@ creditsRouter.get("/credits", async (req, res, next) => {
 });
 
 const checkoutBodySchema = z.object({
-  packageId: z.string().trim().min(1),
+  credits: z.number().int(),
 });
 
 creditsRouter.post("/credits/checkout", async (req, res, next) => {
@@ -39,7 +39,7 @@ creditsRouter.post("/credits/checkout", async (req, res, next) => {
       return;
     }
 
-    const result = await createCreditsCheckout(userId, parsed.data.packageId);
+    const result = await createCreditsCheckout(userId, parsed.data.credits);
     res.status(200).json(result);
   } catch (err) {
     if (err instanceof AppError) {

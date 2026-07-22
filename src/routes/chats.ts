@@ -10,6 +10,7 @@ import {
   deleteOwnedChat,
   getChatDetail,
   getChatHistory,
+  listOwnedChats,
   requireOwnedChat,
 } from "../services/chats.ts";
 import { requirePositiveBalance } from "../services/credits.ts";
@@ -104,6 +105,24 @@ chatsRouter.post("/chats/:chatId/messages", async (req, res, next) => {
       history,
       emitChatCreated: false,
     });
+  } catch (err) {
+    if (sendAppError(res, err)) {
+      return;
+    }
+    next(err);
+  }
+});
+
+/**
+ * List chats for the authenticated user (newest first).
+ * Used by the frontend to restore/sync the sidebar after localStorage loss
+ * and to drop entries deleted in the DB.
+ */
+chatsRouter.get("/chats", async (req, res, next) => {
+  try {
+    const userId = authedUserId(req);
+    const chats = await listOwnedChats(userId);
+    res.json({ chats });
   } catch (err) {
     if (sendAppError(res, err)) {
       return;

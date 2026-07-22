@@ -3,9 +3,8 @@ import Stripe from "stripe";
 import { loadEnv } from "../config/env.ts";
 import { AppError } from "../middleware/error.ts";
 import {
-  getPackageOrThrow,
-  type CreditPackage,
-  type CreditPackageId,
+  quoteCreditPurchase,
+  type CreditPurchaseQuote,
 } from "../lib/billing/packages.ts";
 
 const STRIPE_API_VERSION = "2026-06-24.dahlia" as const;
@@ -49,20 +48,20 @@ function integrationIdentifier(): string {
 
 export type CreateCheckoutSessionInput = {
   userId: string;
-  packageId: CreditPackageId;
+  credits: number;
 };
 
 export type CreateCheckoutSessionResult = {
   sessionId: string;
   url: string;
-  pkg: CreditPackage;
+  quote: CreditPurchaseQuote;
 };
 
 export async function createCheckoutSession(
   input: CreateCheckoutSessionInput,
 ): Promise<CreateCheckoutSessionResult> {
   const { successUrl, cancelUrl } = requireCheckoutUrls();
-  const pkg = getPackageOrThrow(input.packageId);
+  const quote = quoteCreditPurchase(input.credits);
   const stripe = getStripeClient();
 
   const session = await stripe.checkout.sessions.create({
@@ -73,21 +72,21 @@ export async function createCheckoutSession(
     integration_identifier: integrationIdentifier(),
     line_items: [
       {
-        quantity: 1,
+        quantity: quote.credits,
         price_data: {
           currency: "usd",
-          unit_amount: pkg.amountPaidCents,
+          unit_amount: 100,
           product_data: {
-            name: `micromanus ${pkg.label} credits (${pkg.credits})`,
+            name: "micromanus platform credit",
+            description: "$1 per credit",
           },
         },
       },
     ],
     metadata: {
       userId: input.userId,
-      packageId: pkg.id,
-      creditsGranted: String(pkg.credits),
-      amountPaidCents: String(pkg.amountPaidCents),
+      creditsGranted: String(quote.credits),
+      amountPaidCents: String(quote.amountPaidCents),
     },
   });
 
@@ -98,7 +97,7 @@ export async function createCheckoutSession(
   return {
     sessionId: session.id,
     url: session.url,
-    pkg,
+    quote,
   };
 }
 

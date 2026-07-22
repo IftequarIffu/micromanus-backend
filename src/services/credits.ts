@@ -13,7 +13,10 @@ import {
   recordCreditUsageAndDecrement,
 } from "../db/repositories/credits.ts";
 import { AppError } from "../middleware/error.ts";
-import { isCreditPackageId } from "../lib/billing/packages.ts";
+import {
+  isValidCheckoutCredits,
+  MIN_CHECKOUT_CREDITS,
+} from "../lib/billing/packages.ts";
 
 export async function requirePositiveBalance(userId: string): Promise<CreditBalance> {
   const balance = await getCreditBalance(userId);
@@ -57,32 +60,36 @@ export type CreateCreditsCheckoutResult = {
 
 export async function createCreditsCheckout(
   userId: string,
-  packageId: string,
+  credits: number,
 ): Promise<CreateCreditsCheckoutResult> {
-  if (!isCreditPackageId(packageId)) {
-    throw new AppError(400, "invalid_package", "packageId must be starter, standard, or pro");
+  if (!isValidCheckoutCredits(credits)) {
+    throw new AppError(
+      400,
+      "invalid_credits",
+      `credits must be an integer >= ${MIN_CHECKOUT_CREDITS}`,
+    );
   }
 
-  const { sessionId, url, pkg } = await createCheckoutSession({ userId, packageId });
+  const { sessionId, url, quote } = await createCheckoutSession({ userId, credits });
 
   try {
     await insertPendingPurchase({
       userId,
       stripeSessionId: sessionId,
-      amountPaidCents: pkg.amountPaidCents,
-      creditsGranted: pkg.credits,
+      amountPaidCents: quote.amountPaidCents,
+      creditsGranted: quote.credits,
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.error(
       `credit purchase pending insert failed userId=${userId} sessionId=${sessionId} ` +
-        `packageId=${packageId} error=${message} (webhook metadata recovery may still complete)`,
+        `credits=${credits} error=${message} (webhook metadata recovery may still complete)`,
     );
   }
 
   console.log(
-    `checkout created userId=${userId} packageId=${packageId} sessionId=${sessionId} ` +
-      `credits=${pkg.credits} amountCents=${pkg.amountPaidCents}`,
+    `checkout created userId=${userId} sessionId=${sessionId} ` +
+      `credits=${quote.credits} amountCents=${quote.amountPaidCents}`,
   );
 
   return { url, sessionId };

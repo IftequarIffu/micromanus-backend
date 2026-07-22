@@ -1,26 +1,25 @@
-export type CreditPackageId = "starter" | "standard" | "pro";
+/** USD cents charged per platform credit ($1). */
+export const CENTS_PER_CREDIT = 100;
 
-export type CreditPackage = {
-  id: CreditPackageId;
-  label: string;
+/** Minimum credits purchasable in one Stripe checkout. */
+export const MIN_CHECKOUT_CREDITS = 5;
+
+export type CreditPurchaseQuote = {
   credits: number;
-  /** Amount in USD cents. */
+  /** Amount in USD cents (= credits × CENTS_PER_CREDIT). */
   amountPaidCents: number;
 };
 
-export const CREDIT_PACKAGES: Record<CreditPackageId, CreditPackage> = {
-  starter: { id: "starter", label: "Starter", credits: 500, amountPaidCents: 500 },
-  standard: { id: "standard", label: "Standard", credits: 2000, amountPaidCents: 1500 },
-  pro: { id: "pro", label: "Pro", credits: 5000, amountPaidCents: 3000 },
-};
-
-export function isCreditPackageId(value: string): value is CreditPackageId {
-  return value in CREDIT_PACKAGES;
+export function isValidCheckoutCredits(value: unknown): value is number {
+  return typeof value === "number" && Number.isInteger(value) && value >= MIN_CHECKOUT_CREDITS;
 }
 
-export function getPackageOrThrow(packageId: string): CreditPackage {
-  if (!isCreditPackageId(packageId)) {
-    throw new Error(`unknown_package:${packageId}`);
+export function quoteCreditPurchase(credits: number): CreditPurchaseQuote {
+  if (!isValidCheckoutCredits(credits)) {
+    throw new Error(`invalid_credits:${String(credits)}`);
   }
-  return CREDIT_PACKAGES[packageId];
+  return {
+    credits,
+    amountPaidCents: credits * CENTS_PER_CREDIT,
+  };
 }

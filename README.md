@@ -19,7 +19,7 @@ cp .env.example .env
 1. Open [Supabase Dashboard](https://supabase.com/dashboard) → your project → **SQL Editor**.
 2. Paste the contents of `db/schema.sql` and **Run**.
    - This recreates `api_keys` in the BYOK shape (`user_id`, `iv`, `auth_tag`, `last_four`) and adds `record_credit_usage_and_decrement`, `complete_credit_purchase`, and `redeem_coupon`.
-3. If you already applied an older `schema.sql`, also run the pending files under `db/migrations/` in order (`002_complete_credit_purchase.sql`, `003_redeem_coupon.sql`, `004_chat_pdfs_bucket.sql`, then `005_messages_pdf_meta.sql`).
+3. If you already applied an older `schema.sql`, also run the pending files under `db/migrations/` in order (`002_complete_credit_purchase.sql`, `003_redeem_coupon.sql`, `004_chat_pdfs_bucket.sql`, `005_messages_pdf_meta.sql`, then `006_welcome_coupon_5_credits.sql`).
 4. **Storage (PDF tool):** `004_chat_pdfs_bucket.sql` (or a full `schema.sql` apply) creates private bucket `chat-pdfs` + `ensure_chat_pdfs_bucket` RPC. The API calls that RPC before each PDF upload. You can also create the bucket in Dashboard → **Storage** → **New bucket** → `chat-pdfs` → **Private**.
 5. **PDF meta on messages:** `005_messages_pdf_meta.sql` adds `messages.pdf_storage_path` / `pdf_filename` so `GET /chats/:id` can re-sign a download URL after reload.
 6. Verify from the repo:
@@ -171,13 +171,10 @@ Signed PDF URLs expire after **24 hours**. Open `url` from `pdf_ready` / `done.p
 
 ## Buy credits (Stripe Checkout)
 
-Packages (defined in `src/lib/billing/packages.ts`):
+Dynamic pricing (defined in `src/lib/billing/packages.ts`):
 
-| packageId | Credits | Price |
-|---|---|---|
-| `starter` | 500 | $5 |
-| `standard` | 2000 | $15 |
-| `pro` | 5000 | $30 |
+- **$1 per credit**
+- **Minimum 5 credits** per checkout ($5)
 
 1. Put Stripe **test** keys in `.env`: `STRIPE_SECRET_KEY`, `CHECKOUT_SUCCESS_URL`, `CHECKOUT_CANCEL_URL`.
 2. Apply `db/migrations/002_complete_credit_purchase.sql` if not already in your DB.
@@ -193,7 +190,7 @@ stripe listen --forward-to localhost:3000/webhooks/stripe
 curl -sS -X POST http://localhost:3000/credits/checkout \
   -H "Authorization: Bearer <SUPABASE_ACCESS_TOKEN>" \
   -H "Content-Type: application/json" \
-  -d '{"packageId":"starter"}'
+  -d '{"credits":5}'
 # {"url":"https://checkout.stripe.com/...","sessionId":"cs_test_..."}
 ```
 
@@ -203,19 +200,19 @@ curl -sS -X POST http://localhost:3000/credits/checkout \
 ```bash
 curl -sS http://localhost:3000/credits \
   -H "Authorization: Bearer <SUPABASE_ACCESS_TOKEN>"
-# balance should increase by 500 for starter
+# balance should increase by 5
 ```
 
 Replay the same `checkout.session.completed` event — balance must not increase again.
 
 ## Redeem coupon (platform credits)
 
-1. Apply `db/migrations/003_redeem_coupon.sql` in the Supabase SQL Editor if not already applied.
-2. Seed a test coupon (codes are stored/matched uppercase):
+1. Apply `db/migrations/003_redeem_coupon.sql` and `db/migrations/006_welcome_coupon_5_credits.sql` in the Supabase SQL Editor if not already applied.
+2. Or seed/update the welcome coupon manually (codes are stored/matched uppercase):
 
 ```sql
 insert into coupons (code, credits_value, max_redemptions, redemptions_count, expires_at, active)
-values ('WELCOME100', 100, 1000, 0, null, true)
+values ('WELCOME100', 5, 1000, 0, null, true)
 on conflict (code) do update
 set
   credits_value = excluded.credits_value,
@@ -232,7 +229,7 @@ curl -sS -X POST http://localhost:3000/credits/redeem \
   -H "Authorization: Bearer <SUPABASE_ACCESS_TOKEN>" \
   -H "Content-Type: application/json" \
   -d '{"code":"welcome100"}'
-# {"code":"WELCOME100","creditsGranted":100,"balance":<previous+100>}
+# {"code":"WELCOME100","creditsGranted":5,"balance":<previous+5>}
 ```
 
 4. Redeeming the same code again for the same user returns `409` / `coupon_already_redeemed` with no second balance bump.

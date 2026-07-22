@@ -5,7 +5,12 @@ import type {
   MessagePublic,
   Source,
 } from "../../db/types.ts";
-import { createChat, deleteChatOwnedByUser, getChatOwnedByUser } from "../db/repositories/chats.ts";
+import {
+  createChat,
+  deleteChatOwnedByUser,
+  getChatOwnedByUser,
+  listChatsByUserId,
+} from "../db/repositories/chats.ts";
 import {
   insertMessage,
   listMessagesByChatId,
@@ -127,6 +132,22 @@ export async function getChatDetail(chatId: string, userId: string): Promise<Cha
   ]);
   const publicMessages = await Promise.all(messages.map((m) => toPublicMessage(m)));
   return { chat, messages: publicMessages, sources, usage };
+}
+
+export type ChatListItem = {
+  id: string;
+  title: string | null;
+  created_at: string;
+};
+
+/** Sidebar list for the authenticated owner (DB is source of truth). */
+export async function listOwnedChats(userId: string): Promise<ChatListItem[]> {
+  const chats = await listChatsByUserId(userId);
+  return chats.map((c) => ({
+    id: c.id,
+    title: c.title,
+    created_at: c.created_at,
+  }));
 }
 
 /**

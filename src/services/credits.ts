@@ -1,4 +1,4 @@
-import type { CreditBalance, CreditUsage } from "../../db/types.ts";
+import type { CreditBalance, CreditUsage, LlmProvider } from "../../db/types.ts";
 import type Stripe from "stripe";
 import { constructStripeEvent, createCheckoutSession } from "../billing/stripe.ts";
 import { mapCouponRedeemError, mapDbError } from "../db/map-error.ts";
@@ -17,6 +17,96 @@ import {
   isValidCheckoutCredits,
   MIN_CHECKOUT_CREDITS,
 } from "../lib/billing/packages.ts";
+import { usdCostFromTokens } from "../lib/billing/rates.ts";
+
+export type ChatModelUsage = {
+  modelName: string;
+  provider: LlmProvider;
+  inputTokens: number;
+  outputTokens: number;
+  cachedTokens: number;
+  /** Estimated provider API cost in USD (BYOK), from published list prices. */
+  costUsd: number;
+};
+
+export type ChatUsageSummary = {
+  chatId: string;
+  title: string | null;
+  models: ChatModelUsage[];
+};
+
+export type CreditsSummary = {
+  balance: number;
+  usageByChat: ChatUsageSummary[];
+};
+
+function aggregateUsageByChat(
+  rows: Awaited<ReturnType<typeof listCreditUsageForUser>>,
+): ChatUsageSummary[] {
+  type AccModel = ChatModelUsage;
+  type AccChat = {
+    chatId: string;
+    title: string | null;
+    models: Map<string, AccModel>;
+    latestAt: string;
+  };
+
+  const chats = new Map<string, AccChat>();
+
+  for (const row of rows) {
+    let chat = chats.get(row.chat_id);
+    if (!chat) {
+      chat = {
+        chatId: row.chat_id,
+        title: row.chats?.title ?? null,
+        models: new Map(),
+        latestAt: row.created_at,
+      };
+      chats.set(row.chat_id, chat);
+    } else if (row.created_at > chat.latestAt) {
+      chat.latestAt = row.created_at;
+    }
+
+    const key = row.model_name;
+    const existing = chat.models.get(key);
+    if (existing) {
+      existing.inputTokens += row.input_tokens;
+      existing.outputTokens += row.output_tokens;
+      existing.cachedTokens += row.cached_tokens;
+      existing.costUsd += usdCostFromTokens(
+        row.model_name,
+        row.input_tokens,
+        row.output_tokens,
+        row.cached_tokens,
+      );
+    } else {
+      chat.models.set(key, {
+        modelName: row.model_name,
+        provider: row.provider,
+        inputTokens: row.input_tokens,
+        outputTokens: row.output_tokens,
+        cachedTokens: row.cached_tokens,
+        costUsd: usdCostFromTokens(
+          row.model_name,
+          row.input_tokens,
+          row.output_tokens,
+          row.cached_tokens,
+        ),
+      });
+    }
+  }
+
+  return [...chats.values()]
+    .sort((a, b) => (a.latestAt < b.latestAt ? 1 : a.latestAt > b.latestAt ? -1 : 0))
+    .map((chat) => ({
+      chatId: chat.chatId,
+      title: chat.title,
+      models: [...chat.models.values()].map((m) => ({
+        ...m,
+        costUsd: Math.round(m.costUsd * 100_000) / 100_000,
+      })),
+    }));
+}
 
 export async function requirePositiveBalance(userId: string): Promise<CreditBalance> {
   const balance = await getCreditBalance(userId);
@@ -32,7 +122,7 @@ export async function requirePositiveBalance(userId: string): Promise<CreditBala
 export async function getCreditsSummary(
   userId: string,
   chatId?: string,
-): Promise<{ balance: number; usage: CreditUsage[] }> {
+): Promise<CreditsSummary> {
   const [balanceRow, usage] = await Promise.all([
     getCreditBalance(userId),
     listCreditUsageForUser(userId, chatId),
@@ -40,7 +130,7 @@ export async function getCreditsSummary(
 
   return {
     balance: balanceRow?.balance ?? 0,
-    usage,
+    usageByChat: aggregateUsageByChat(usage),
   };
 }
 

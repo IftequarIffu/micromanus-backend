@@ -213,7 +213,8 @@ export type CreatePdfToolOptions = {
 
 /**
  * PDF creation tool for AI SDK tool-calling.
- * Does not write to Postgres — returns a signed Storage URL only.
+ * Does not write to Postgres. Full signed URL stays in execute output for SSE;
+ * toModelOutput omits it so the LLM cannot paste a corrupted JWT link.
  * At most one upload per tool instance (per chat completion request).
  */
 export function createPdfTool(options: CreatePdfToolOptions) {
@@ -228,7 +229,7 @@ export function createPdfTool(options: CreatePdfToolOptions) {
       "Use after 2+ web_search calls covering different angles of the topic. " +
       "Call at most once per assistant reply — repeated calls return the same file. " +
       "Layout includes title page, contents, one section start per page, and a sources page — aim for a thorough 5+ page report. " +
-      "Returns a temporary download URL.",
+      "Does not return a pasteable download URL — the UI shows View PDF. Never invent or paste storage URLs.",
     inputSchema: createPdfInputSchema,
     execute: async (input) => {
       if (cached) {
@@ -261,5 +262,16 @@ export function createPdfTool(options: CreatePdfToolOptions) {
         throw err;
       }
     },
+    toModelOutput: ({ output }) => ({
+      type: "json",
+      value: {
+        filename: output.filename,
+        pages: output.pages,
+        bytes: output.bytes,
+        note:
+          "PDF is ready. Tell the user to use the View PDF button in the UI. " +
+          "Do not invent, reconstruct, or paste any download or storage URL.",
+      },
+    }),
   });
 }

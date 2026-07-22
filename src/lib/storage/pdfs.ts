@@ -141,6 +141,7 @@ export async function uploadChatPdf(params: {
 /**
  * Re-sign an existing object path in chat-pdfs (e.g. when hydrating a chat).
  * Returns null if signing fails — callers should omit pdf rather than fail the request.
+ * Omits `download` so the browser can display the PDF inline (Content-Disposition: inline).
  */
 export async function createChatPdfSignedUrl(path: string): Promise<string | null> {
   const supabase = getSupabaseClient();
@@ -165,6 +166,72 @@ export async function createChatPdfSignedUrl(path: string): Promise<string | nul
   }
 
   return signed.signedUrl;
+}
+
+/** Object names are `{uuid}-{filename}` — strip the UUID prefix when present. */
+export function filenameFromChatPdfObjectName(objectName: string): string {
+  const stripped = objectName.replace(
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}-/i,
+    "",
+  );
+  return sanitizePdfFilename(stripped.length > 0 ? stripped : objectName);
+}
+
+/**
+ * Newest PDF in chat-pdfs/{userId}/{chatId}/ with a fresh signed URL.
+ * Used when message rows lack pdf_storage_path (migration not applied / legacy rows).
+ */
+export async function getLatestChatPdfSigned(params: {
+  userId: string;
+  chatId: string;
+}): Promise<{ path: string; url: string; filename: string } | null> {
+  const supabase = getSupabaseClient();
+  if (!supabase) {
+    return null;
+  }
+
+  const prefix = `${params.userId}/${params.chatId}`;
+  const { data: listed, error: listError } = await supabase.storage
+    .from(CHAT_PDFS_BUCKET)
+    .list(prefix, {
+      limit: 100,
+      sortBy: { column: "created_at", order: "desc" },
+    });
+
+  if (listError) {
+    console.error(
+      `PDF list for hydrate failed prefix=${prefix} message=${listError.message}`,
+    );
+    return null;
+  }
+
+  const newest = (listed ?? []).find((item) => item.name?.toLowerCase().endsWith(".pdf"));
+  if (!newest?.name) {
+    return null;
+  }
+
+  const path = `${prefix}/${newest.name}`;
+  const url = await createChatPdfSignedUrl(path);
+  if (!url) {
+    return null;
+  }
+
+  return {
+    path,
+    url,
+    filename: filenameFromChatPdfObjectName(newest.name),
+  };
+}
+
+/**
+ * Strip Supabase Storage signed URLs from assistant text.
+ * LLMs often paste/truncate JWT query tokens, which then 400 with InvalidJWT in the browser.
+ */
+export function scrubStorageSignedUrls(text: string): string {
+  return text.replace(
+    /https?:\/\/[^\s)\]>"']*\/storage\/v1\/object\/sign\/[^\s)\]>"']+/gi,
+    "(PDF available via View PDF)",
+  );
 }
 
 /**

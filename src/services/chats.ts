@@ -18,7 +18,7 @@ import {
 } from "../db/repositories/messages.ts";
 import { insertSources, listSourcesByChatId } from "../db/repositories/sources.ts";
 import { listCreditUsageByChatId } from "../db/repositories/credits.ts";
-import { createChatPdfSignedUrl, deleteChatPdfs } from "../lib/storage/pdfs.ts";
+import { createChatPdfSignedUrl, deleteChatPdfs, getLatestChatPdfSigned } from "../lib/storage/pdfs.ts";
 import { AppError } from "../middleware/error.ts";
 
 const TITLE_MAX = 80;
@@ -79,7 +79,13 @@ export async function addAssistantMessage(
     return await updateMessagePdfMeta(message.id, pdf);
   } catch (err) {
     const msg = err instanceof Error ? err.message : "update_pdf_meta_failed";
-    console.error(`assistant pdf meta failed messageId=${message.id} message=${msg}`);
+    const schemaHint =
+      /pdf_storage_path|pdf_filename|schema cache|could not find/i.test(msg)
+        ? " — run db/migrations/005_messages_pdf_meta.sql in Supabase SQL Editor"
+        : "";
+    console.error(
+      `assistant pdf meta failed messageId=${message.id} message=${msg}${schemaHint}`,
+    );
     return message;
   }
 }
@@ -123,6 +129,41 @@ async function toPublicMessage(m: Message): Promise<MessagePublic> {
   };
 }
 
+/**
+ * When message rows have no pdf_* meta (migration missing or legacy), attach the
+ * newest Storage object for this chat to the latest assistant message.
+ */
+async function withStoragePdfFallback(
+  userId: string,
+  chatId: string,
+  messages: MessagePublic[],
+): Promise<MessagePublic[]> {
+  if (messages.some((m) => m.pdf)) {
+    return messages;
+  }
+
+  const latest = await getLatestChatPdfSigned({ userId, chatId });
+  if (!latest) {
+    return messages;
+  }
+
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i]?.role === "assistant") {
+      const next = [...messages];
+      next[i] = {
+        ...messages[i]!,
+        pdf: { url: latest.url, filename: latest.filename },
+      };
+      console.log(
+        `pdf hydrate fallback from storage chatId=${chatId} path=${latest.path}`,
+      );
+      return next;
+    }
+  }
+
+  return messages;
+}
+
 export async function getChatDetail(chatId: string, userId: string): Promise<ChatDetail> {
   const chat = await requireOwnedChat(chatId, userId);
   const [messages, sources, usage] = await Promise.all([
@@ -131,7 +172,8 @@ export async function getChatDetail(chatId: string, userId: string): Promise<Cha
     listCreditUsageByChatId(chatId),
   ]);
   const publicMessages = await Promise.all(messages.map((m) => toPublicMessage(m)));
-  return { chat, messages: publicMessages, sources, usage };
+  const withPdf = await withStoragePdfFallback(userId, chatId, publicMessages);
+  return { chat, messages: withPdf, sources, usage };
 }
 
 export type ChatListItem = {

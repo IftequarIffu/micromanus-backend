@@ -167,7 +167,7 @@ Watch the dev-server terminal for chat / LLM / search / pdf / credit logs (never
 | `error` | Soft failures | `{ "message": "..." }` |
 | `done` | Stream end | `{ "ok": true\|false, "chatId": "...", "pdf"?: { "url", "filename" }, ... }` |
 
-Signed PDF URLs expire after **24 hours**. Open `url` from `pdf_ready` / `done.pdf` in a browser to download. Confirm the object under Storage → `chat-pdfs` → `{userId}/{chatId}/…` (one object per successful report; duplicate tool calls reuse the first upload). After reload, `GET /chats/:chatId` returns a fresh signed `pdf` on the assistant message when one was stored. PDF works on **both** `POST /chats/messages` (new chat) and `POST /chats/:chatId/messages` (existing chat).
+Signed PDF URLs expire after **24 hours**. Use the UI **View PDF** control (from `pdf_ready` / `done.pdf` / `message.pdf`) to open the file inline in the browser — do not rely on any storage URL pasted in assistant text (those are omitted/scrubbed because LLMs corrupt long JWT tokens). Confirm the object under Storage → `chat-pdfs` → `{userId}/{chatId}/…` (one object per successful report; duplicate tool calls reuse the first upload). After reload, `GET /chats/:chatId` returns a fresh signed `pdf` on the assistant message when one was stored. PDF works on **both** `POST /chats/messages` (new chat) and `POST /chats/:chatId/messages` (existing chat).
 
 ## Buy credits (Stripe Checkout)
 

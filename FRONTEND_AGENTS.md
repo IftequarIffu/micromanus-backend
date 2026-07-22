@@ -188,7 +188,7 @@ Optional: `/settings` layout wrapping keys. Protect all non-login routes with an
 | Composer | AI Elements `Prompt Input` | Textarea + send; disable while streaming |
 | Model picker | AI Elements `Model Selector` | Options from `GET /models` (`label` / `id`) |
 | Citations | AI Elements `Sources` / Inline Citation | Per-assistant-message sources |
-| PDF / tool result | AI Elements `Tool` or small Artifact-style chip | **Download PDF** from `pdf_ready` / `done.pdf` / message `pdf` |
+| PDF / tool result | AI Elements `Tool` or small Artifact-style chip | **View PDF** from `pdf_ready` / `done.pdf` / message `pdf` |
 
 ### App chrome (shadcn/ui)
 
@@ -325,7 +325,7 @@ No `chat_created` event on this route.
 
 `GET /chats/:chatId` → messages, sources, usage. Group `sources` by `message_id` for citation UI.
 
-Each message may include optional `pdf?: { url, filename }` (freshly signed, ~24h) when that assistant turn produced a PDF. Map it onto the UI message so a **Download PDF** control works after reload — do not rely only on live SSE.
+Each message may include optional `pdf?: { url, filename }` (freshly signed, ~24h) when that assistant turn produced a PDF. Map it onto the UI message so a **View PDF** control works after reload — do not rely only on live SSE.
 
 Wrong owner / missing chat → `404` `chat_not_found` (treat as not found; do not show “forbidden”).
 
@@ -420,7 +420,7 @@ If auth/credits/key/validation fail **before** SSE starts, the response is norma
 
 ### PDF URLs
 
-Signed Supabase Storage URLs, ~**24h** expiry. Show a **Download PDF** control from `pdf_ready`, `done.pdf`, or `message.pdf` on hydrate. Re-sign happens server-side on `GET /chats/:chatId` — there is no separate “re-sign PDF” API.
+Signed Supabase Storage URLs, ~**24h** expiry. Show a **View PDF** control from `pdf_ready`, `done.pdf`, or `message.pdf` on hydrate — open in a new tab for inline browser viewing (no `download` attribute / no Storage `download` signed-URL option). Do **not** parse download links from assistant markdown (the model is not given a pasteable URL; any storage sign URLs in text are scrubbed). Re-sign happens server-side on `GET /chats/:chatId` — there is no separate “re-sign PDF” API.
 
 ---
 
@@ -547,8 +547,25 @@ Permanently deletes the chat for the authenticated owner: messages, sources, per
 **GET** `/credits?chatId=` (optional filter)
 
 ```ts
-{ balance: number; usage: CreditUsage[] }
+{
+  balance: number;
+  usageByChat: Array<{
+    chatId: string;
+    title: string | null;
+    models: Array<{
+      modelName: string;
+      provider: "openai" | "claude" | "gemini";
+      inputTokens: number;
+      outputTokens: number;
+      cachedTokens: number;
+      /** Estimated provider API cost in USD (BYOK list prices). */
+      costUsd: number;
+    }>;
+  }>;
+}
 ```
+
+Chats are ordered by most recent usage. Within each chat, token totals and estimated USD cost are aggregated per model.
 
 **POST** `/credits/checkout`
 

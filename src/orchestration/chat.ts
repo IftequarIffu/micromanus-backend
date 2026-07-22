@@ -18,6 +18,7 @@ import {
   persistSourcesForMessage,
 } from "../services/chats.ts";
 import { chargeCredits } from "../services/credits.ts";
+import { scrubStorageSignedUrls } from "../lib/storage/pdfs.ts";
 import { createPdfTool, type PdfCreatedMeta } from "../tools/pdf.ts";
 import { createSearchTool, type SearchResult } from "../tools/search.ts";
 import { resolveModel, type ModelDefinition } from "./models.ts";
@@ -164,7 +165,8 @@ export async function streamChatCompletion(params: StreamChatParams): Promise<vo
         "(1) call web_search at least twice with different queries/angles to gather Tavily sources; " +
         "(2) call create_pdf exactly once with a real title, at least 5 detailed sections (each several paragraphs of analysis grounded in the search results — never short stubs), " +
         "and a sources list whose title+url pairs come only from those web_search results — do not call create_pdf again to revise the same report; " +
-        "(3) in your final reply, briefly summarize and include the download URL. Be accurate; prefer depth for PDF reports.",
+        "(3) in your final reply, briefly summarize and tell the user the PDF is ready via the View PDF control — " +
+        "never invent, reconstruct, or paste any download, storage, or signed URL. Be accurate; prefer depth for PDF reports.",
       onError: ({ error }) => {
         streamError = error;
         console.error(
@@ -212,7 +214,7 @@ export async function streamChatCompletion(params: StreamChatParams): Promise<vo
 
     const assistantMessage = await addAssistantMessage(
       chatId,
-      text,
+      scrubStorageSignedUrls(text),
       modelId,
       lastPdf
         ? { storagePath: lastPdf.path, filename: lastPdf.filename }

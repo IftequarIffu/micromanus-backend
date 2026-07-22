@@ -60,14 +60,18 @@ export async function recordCreditUsageAndDecrement(
   return data as CreditUsage;
 }
 
+export type CreditUsageWithChat = CreditUsage & {
+  chats: { title: string | null } | null;
+};
+
 export async function listCreditUsageForUser(
   userId: string,
   chatId?: string,
-): Promise<CreditUsage[]> {
+): Promise<CreditUsageWithChat[]> {
   const client = requireClient();
   let query = client
     .from("credit_usage")
-    .select("*")
+    .select("*, chats(title)")
     .eq("user_id", userId)
     .order("created_at", { ascending: false });
 
@@ -79,7 +83,7 @@ export async function listCreditUsageForUser(
   if (error) {
     throw new Error(`credit_usage.list failed: ${error.code ?? error.message}`);
   }
-  return (data ?? []) as CreditUsage[];
+  return (data ?? []) as CreditUsageWithChat[];
 }
 
 export async function listCreditUsageByChatId(chatId: string): Promise<CreditUsage[]> {

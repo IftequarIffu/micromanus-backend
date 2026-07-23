@@ -481,10 +481,12 @@ Canonical list lives in `.env.example`. Nothing in this backend is browser-expos
 | `SUPABASE_JWT_SECRET` | Verifying Supabase Auth JWTs | server only |
 | `ENCRYPTION_KEY` | Master key for encrypting/decrypting user-supplied provider API keys (section 16) | server only |
 | `TAVILY_API_KEY` | Search tool (system-owned) | server only |
-| `STRIPE_SECRET_KEY` | Stripe API calls (system-owned) | server only |
+| `STRIPE_SECRET_KEY` | Stripe API calls (prefer `sk_test_` even on Vercel Production) | server only |
 | `STRIPE_WEBHOOK_SECRET` | Verifying Stripe webhook signatures | server only |
+| `ALLOW_LIVE_STRIPE` | Set `true` to allow `sk_live_` keys; default refuses live keys | server only |
 | `CHECKOUT_SUCCESS_URL` | Stripe Checkout success redirect (include `{CHECKOUT_SESSION_ID}`) | server only |
 | `CHECKOUT_CANCEL_URL` | Stripe Checkout cancel redirect | server only |
+| `CORS_ORIGINS` | Comma-separated frontend origins for browser CORS | server only |
 | `ADMIN_SECRET` | Protects internal/admin routes | server only |
 
 Note: there are no system-wide `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` / `GEMINI_API_KEY` variables — LLM provider keys are BYOK, stored per user in `api_keys` (section 8), never in environment variables.

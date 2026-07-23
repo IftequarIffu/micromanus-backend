@@ -13,10 +13,20 @@ let stripeClient: Stripe | null = null;
 
 function requireStripeSecretKey(): string {
   const env = loadEnv();
-  if (!env.STRIPE_SECRET_KEY) {
+  const key = env.STRIPE_SECRET_KEY;
+  if (!key) {
     throw new AppError(503, "stripe_not_configured", "STRIPE_SECRET_KEY is not configured");
   }
-  return env.STRIPE_SECRET_KEY;
+
+  if (key.startsWith("sk_live_") && !env.ALLOW_LIVE_STRIPE) {
+    throw new AppError(
+      503,
+      "stripe_live_not_allowed",
+      "Live Stripe keys are blocked. Use a sk_test_ key, or set ALLOW_LIVE_STRIPE=true to enable live mode.",
+    );
+  }
+
+  return key;
 }
 
 function requireCheckoutUrls(): { successUrl: string; cancelUrl: string } {
@@ -38,7 +48,10 @@ export function getStripeClient(): Stripe {
   if (stripeClient) {
     return stripeClient;
   }
-  stripeClient = new Stripe(requireStripeSecretKey(), { apiVersion: STRIPE_API_VERSION });
+  const secretKey = requireStripeSecretKey();
+  const mode = secretKey.startsWith("sk_live_") ? "live" : "test";
+  console.log(`stripe client init: mode=${mode}`);
+  stripeClient = new Stripe(secretKey, { apiVersion: STRIPE_API_VERSION });
   return stripeClient;
 }
 

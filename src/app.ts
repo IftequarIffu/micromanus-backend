@@ -1,4 +1,5 @@
 import express, { type Express } from "express";
+import { corsMiddleware } from "./middleware/cors.ts";
 import { errorHandler } from "./middleware/error.ts";
 import { requestLog } from "./middleware/request-log.ts";
 import { apiKeysRouter } from "./routes/api-keys.ts";
@@ -13,6 +14,7 @@ export function createApp(): Express {
   const app = express();
 
   app.use(requestLog);
+  app.use(corsMiddleware());
 
   // Stripe needs the raw body for signature verification.
   app.use("/webhooks/stripe", express.raw({ type: "application/json" }));

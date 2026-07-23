@@ -80,7 +80,7 @@ Use this stack. Do not substitute Next.js App Router, another CSS framework, or 
 | Server state | **TanStack React Query** (`@tanstack/react-query`) |
 | Routing | **React Router** (`react-router`) |
 | Auth | `@supabase/supabase-js` with Google + GitHub providers |
-| Proxy | Vite `server.proxy` → backend (backend has **no CORS**) |
+| Proxy / API | **Local:** Vite `server.proxy` → backend (no CORS needed). **Production (Vercel):** set `VITE_API_URL` to the backend origin; backend must set `CORS_ORIGINS` to the frontend origin(s). |
 
 ### 3.1 Scaffold notes
 
@@ -137,7 +137,7 @@ server: {
 }
 ```
 
-With a proxy, the browser calls same-origin paths (e.g. `fetch("/models")`). Without a proxy, set `VITE_API_URL=http://localhost:4000` and the backend must gain CORS (it does not today).
+With a proxy, the browser calls same-origin paths (e.g. `fetch("/models")`). On **Vercel Production**, there is no Vite proxy — set `VITE_API_URL=https://<backend>.vercel.app` and configure backend `CORS_ORIGINS` to include the frontend origin.
 
 ---
 
@@ -642,7 +642,7 @@ Public only:
 | ------------------------ | -------------------------------------------------------------- |
 | `VITE_SUPABASE_URL`      | Same project URL as backend `SUPABASE_URL`                     |
 | `VITE_SUPABASE_ANON_KEY` | Supabase anon/public key                                       |
-| `VITE_API_URL`           | Optional if not using Vite proxy; e.g. `http://localhost:4000` |
+| `VITE_API_URL`           | **Required on Vercel.** Backend origin, no trailing slash (e.g. `https://api.vercel.app`). Leave unset locally when using the Vite proxy. |
 
 
 Never put service-role, encryption, Stripe secret, webhook secret, or Tavily keys in the frontend.
@@ -696,7 +696,7 @@ sequenceDiagram
 - Implementing OAuth token exchange yourself
 - Calling providers with the user’s key from the browser
 - Empty-chat create endpoints
-- Assuming CORS without a proxy
+- Skipping `VITE_API_URL` + backend `CORS_ORIGINS` on Vercel (local Vite proxy does not apply in production)
 - Building backend routes in this frontend project
 - Switching away from the required stack (React, Tailwind v4, shadcn, AI Elements, React Query, React Router)
 - Using `@ai-sdk/react` `useChat` against providers or a frontend-held API key instead of this backend’s SSE chat API

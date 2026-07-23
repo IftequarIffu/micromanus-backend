@@ -15,6 +15,14 @@ const envSchema = z.object({
   STRIPE_WEBHOOK_SECRET: optionalString,
   CHECKOUT_SUCCESS_URL: optionalString,
   CHECKOUT_CANCEL_URL: optionalString,
+  /** When true, allow sk_live_ keys. Default: refuse live keys (soft-launch / test mode). */
+  ALLOW_LIVE_STRIPE: z
+    .enum(["true", "false"])
+    .optional()
+    .transform((v) => v === "true"),
+
+  /** Comma-separated browser origins allowed for CORS (e.g. https://app.vercel.app). */
+  CORS_ORIGINS: optionalString,
 
   ENCRYPTION_KEY: optionalString,
   ADMIN_SECRET: optionalString,

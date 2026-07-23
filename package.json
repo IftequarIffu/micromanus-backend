@@ -19,6 +19,7 @@
     "@supabase/supabase-js": "^2.90.1",
     "@tavily/core": "^0.7.6",
     "ai": "^7.0.32",
+    "cors": "^2.8.6",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
     "jose": "6.2.3",
@@ -29,6 +30,7 @@
   "devDependencies": {
     "@eslint/js": "^9.39.2",
     "@types/bun": "latest",
+    "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
     "@types/node": "^26.1.1",
     "@types/pdfkit": "^0.17.6",

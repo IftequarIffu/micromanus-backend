@@ -11,7 +11,8 @@ bun install
 cp .env.example .env
 # Fill at least: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, SUPABASE_JWT_SECRET, ENCRYPTION_KEY
 # Optional for chat tools: TAVILY_API_KEY
-# For Stripe checkout: STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET, CHECKOUT_SUCCESS_URL, CHECKOUT_CANCEL_URL
+# For Stripe checkout: STRIPE_SECRET_KEY (prefer sk_test_), STRIPE_WEBHOOK_SECRET, CHECKOUT_SUCCESS_URL, CHECKOUT_CANCEL_URL
+# For Vercel + separate frontend host: CORS_ORIGINS=https://<frontend>.vercel.app
 ```
 
 ### Supabase schema
@@ -255,3 +256,52 @@ curl -sS -X POST http://localhost:3000/credits/redeem \
 | `POST` | `/webhooks/stripe` | Stripe signature |
 
 Note: there is no standalone create-chat route. A chat is created on `POST /chats/messages` (lazy creation). LLM keys are BYOK via `/api-keys`, not env vars.
+
+## Deploy to Vercel
+
+Deploy this repo as its **own** Vercel project (separate from the frontend). Express runs as a single Fluid compute function on **Bun**.
+
+### 1. Import and configure
+
+1. [Import](https://vercel.com/new) the `micromanus-backend` Git repo (or `vercel` / `vercel --prod` from the CLI).
+2. Vercel detects Express via `src/index.ts` default export. `vercel.json` sets `bunVersion: "1.x"` and `maxDuration: 300` (raise to `800` on Pro if long agent runs need it).
+3. Set **Production** environment variables (same names as `.env.example`):
+
+| Variable | Notes |
+|---|---|
+| `SUPABASE_URL` | Supabase project URL |
+| `SUPABASE_SERVICE_ROLE_KEY` | Service role (server only) |
+| `SUPABASE_JWT_SECRET` | JWT secret for HS256 sessions |
+| `ENCRYPTION_KEY` | BYOK master key |
+| `TAVILY_API_KEY` | Optional; needed for search tool |
+| `STRIPE_SECRET_KEY` | **`sk_test_…`** for Test mode (dummy cards). Live keys need `ALLOW_LIVE_STRIPE=true` |
+| `STRIPE_WEBHOOK_SECRET` | Signing secret from a **Test mode** Dashboard webhook (not Stripe CLI) |
+| `CHECKOUT_SUCCESS_URL` | `https://<frontend>.vercel.app/credits?checkout=success&session_id={CHECKOUT_SESSION_ID}` |
+| `CHECKOUT_CANCEL_URL` | `https://<frontend>.vercel.app/credits?checkout=cancel` |
+| `CORS_ORIGINS` | Comma-separated frontend origins, e.g. `https://<frontend>.vercel.app` |
+| `ALLOW_LIVE_STRIPE` | Leave unset/`false` to keep Test mode only |
+
+### 2. Stripe Test mode on the production URL
+
+Soft launch keeps Stripe in **Test mode** even on Vercel Production so [test cards](https://docs.stripe.com/testing#cards) work:
+
+1. Stripe Dashboard → toggle **Test mode** on.
+2. Developers → API keys → copy **Secret key** (`sk_test_…`) → Vercel `STRIPE_SECRET_KEY`.
+3. Developers → Webhooks → **Add endpoint** → URL `https://<backend>.vercel.app/webhooks/stripe` → listen for `checkout.session.completed` → copy **Signing secret** (`whsec_…`) → `STRIPE_WEBHOOK_SECRET`.
+4. Pay on the live site with card `4242 4242 4242 4242` (any future expiry, any CVC). Charges appear under Test mode Payments, not Live.
+
+### 3. Smoke after deploy
+
+```bash
+curl -sS https://<backend>.vercel.app/health
+# {"ok":true}
+
+curl -sSI -X OPTIONS https://<backend>.vercel.app/models \
+  -H "Origin: https://<frontend>.vercel.app" \
+  -H "Access-Control-Request-Method: GET" \
+  -H "Access-Control-Request-Headers: authorization"
+# Expect Access-Control-Allow-Origin: https://<frontend>.vercel.app
+```
+
+Also add the production frontend URL to Supabase Auth → URL configuration (Site URL / Redirect URLs).
+

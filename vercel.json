@@ -2,7 +2,6 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": "express",
   "fluid": true,
-  "maxDuration": 300,
   "buildCommand": "",
   "env": {
     "VERCEL_EXPERIMENTAL_BACKENDS": "1",

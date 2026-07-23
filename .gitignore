@@ -4,6 +4,8 @@ node_modules
 # output
 out
 dist
+api/index.js
+api/index.js.map
 *.tgz
 
 # code coverage

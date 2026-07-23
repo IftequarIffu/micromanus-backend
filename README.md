@@ -259,14 +259,21 @@ Note: there is no standalone create-chat route. A chat is created on `POST /chat
 
 ## Deploy to Vercel
 
-Deploy this repo as its **own** Vercel project (separate from the frontend). Express runs as a single Fluid compute function on the **Node.js** runtime (not Bun — Bun on Vercel hits empty `ResolveMessage` crashes with this codebase’s `.ts` imports).
+Deploy this repo as its **own** Vercel project (separate from the frontend).
+
+How it works on Vercel:
+
+1. `vercel-build` (esbuild) bundles `src/vercel-entry.ts` → `api/index.js` (Node ESM; deps stay external).
+2. `vercel.json` rewrites every path to `/api`, which runs that serverless function (`maxDuration: 300`).
+3. Local `bun run dev` is unchanged (`src/index.ts`).
+
+Do **not** set `bunVersion` in the project. If an older deploy used Bun or `framework: express` with an empty build command, redeploy from this setup (that combination produced platform `NOT_FOUND` with no function).
 
 ### 1. Import and configure
 
 1. [Import](https://vercel.com/new) the `micromanus-backend` Git repo (or `vercel` / `vercel --prod` from the CLI).
-2. Vercel detects Express via `src/index.ts` default export. `vercel.json` sets `framework: express`, `maxDuration: 300`, and enables experimental Express build mode (`VERCEL_EXPERIMENTAL_BACKENDS` / `VERCEL_ENABLE_EXPERIMENTAL_BUILD_MODE`) so TypeScript `.ts` imports resolve correctly.
-3. Do **not** set `bunVersion` in the dashboard. Local `bun run dev` is unchanged.
-4. Set **Production** environment variables (same names as `.env.example`):
+2. Framework preset can stay **Other**; build uses `vercel-build` from `package.json` automatically.
+3. Set **Production** environment variables (same names as `.env.example`):
 
 | Variable | Notes |
 |---|---|
@@ -281,8 +288,6 @@ Deploy this repo as its **own** Vercel project (separate from the frontend). Exp
 | `CHECKOUT_CANCEL_URL` | `https://<frontend>.vercel.app/credits?checkout=cancel` |
 | `CORS_ORIGINS` | Comma-separated frontend origins, e.g. `https://<frontend>.vercel.app` |
 | `ALLOW_LIVE_STRIPE` | Leave unset/`false` to keep Test mode only |
-
-If you previously deployed with `bunVersion: "1.x"`, redeploy from this commit (or remove Bun runtime in Project Settings) so the Node + experimental build path is used.
 
 ### 2. Stripe Test mode on the production URL
 

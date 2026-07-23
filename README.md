@@ -42,7 +42,7 @@ Supabase Auth owns OAuth. This backend only verifies JWTs and upserts `public.us
 https://<project-ref>.supabase.co/auth/v1/callback
 ```
 
-Find it on Dashboard → **Authentication** → **Providers** → Google or GitHub. 
+Find it on Dashboard → **Authentication** → **Providers** → Google or GitHub.  
 
 #### Google
 

@@ -3,10 +3,8 @@ import { createGoogle } from "@ai-sdk/google";
 import { createOpenAI } from "@ai-sdk/openai";
 import {
   APICallError,
-  isStepCount,
   NoOutputGeneratedError,
   RetryError,
-  streamText,
   type ModelMessage,
 } from "ai";
 import type { Response } from "express";
@@ -21,6 +19,7 @@ import { chargeCredits } from "../services/credits.ts";
 import { scrubStorageSignedUrls } from "../lib/storage/pdfs.ts";
 import { createPdfTool, type PdfCreatedMeta } from "../tools/pdf.ts";
 import { createSearchTool, type SearchResult } from "../tools/search.ts";
+import { createChatAgent } from "./agent.ts";
 import { resolveModel, type ModelDefinition } from "./models.ts";
 
 export function writeSse(res: Response, event: string, data: unknown): void {
@@ -102,7 +101,8 @@ export type StreamChatParams = {
 };
 
 /**
- * Streams an assistant reply over SSE, then persists message / sources / credits.
+ * Streams an assistant reply over SSE via ToolLoopAgent (think → tool → observe → repeat),
+ * then persists message / sources / credits.
  * Assumes auth, credit gate, and ownership checks already passed.
  */
 export async function streamChatCompletion(params: StreamChatParams): Promise<void> {
@@ -145,34 +145,57 @@ export async function streamChatCompletion(params: StreamChatParams): Promise<vo
     },
   });
 
+  const tools = { web_search: search, create_pdf };
+  const agent = createChatAgent({ model: languageModel, tools });
+
   console.log(`LLM call started chatId=${chatId} model=${modelId}`);
 
   let streamError: unknown;
 
   try {
-    const result = streamText({
-      model: languageModel,
+    // onError is forwarded to streamText via ToolLoopAgent prepareCall options spread
+    // (not on the public AgentStreamParameters type).
+    const result = await agent.stream({
       messages: toModelMessages(history),
-      tools: { web_search: search, create_pdf },
-      // Allow multiple Tavily searches + a detailed PDF tool call + final reply.
-      stopWhen: isStepCount(8),
-      // Billing / auth failures should fail fast (default retries hide the real error for ~10s)
-      maxRetries: 0,
-      instructions:
-        "You are a helpful assistant in micromanus. " +
-        "Use the web_search tool (Tavily) whenever current information or citations would help — do not invent news or URLs. " +
-        "When the user asks for a PDF, report, or downloadable document: " +
-        "(1) call web_search at least twice with different queries/angles to gather Tavily sources; " +
-        "(2) call create_pdf exactly once with a real title, at least 5 detailed sections (each several paragraphs of analysis grounded in the search results — never short stubs), " +
-        "and a sources list whose title+url pairs come only from those web_search results — do not call create_pdf again to revise the same report; " +
-        "(3) in your final reply, briefly summarize and tell the user the PDF is ready via the View PDF control — " +
-        "never invent, reconstruct, or paste any download, storage, or signed URL. Be accurate; prefer depth for PDF reports.",
-      onError: ({ error }) => {
-        streamError = error;
-        console.error(
-          `LLM stream error chatId=${chatId} message=${publicLlmErrorMessage(error)}`,
+      onStepStart: ({ stepNumber }) => {
+        console.log(`agent step start chatId=${chatId} step=${stepNumber}`);
+      },
+      onStepEnd: ({ stepNumber, finishReason, toolCalls }) => {
+        const toolNames = toolCalls.map((tc) => tc.toolName).join(",") || "(none)";
+        console.log(
+          `agent step end chatId=${chatId} step=${stepNumber} finishReason=${finishReason} tools=${toolNames}`,
         );
       },
+      onToolExecutionStart: ({ toolCall }) => {
+        console.log(
+          `agent tool start chatId=${chatId} tool=${toolCall.toolName} toolCallId=${toolCall.toolCallId}`,
+        );
+        writeSse(res, "tool_start", {
+          chatId,
+          toolName: toolCall.toolName,
+          toolCallId: toolCall.toolCallId,
+        });
+      },
+      onToolExecutionEnd: ({ toolCall, toolExecutionMs, toolOutput }) => {
+        const ok = toolOutput.type === "tool-result";
+        console.log(
+          `agent tool end chatId=${chatId} tool=${toolCall.toolName} toolCallId=${toolCall.toolCallId} ok=${ok} ms=${toolExecutionMs}`,
+        );
+        writeSse(res, "tool_end", {
+          chatId,
+          toolName: toolCall.toolName,
+          toolCallId: toolCall.toolCallId,
+          ok,
+        });
+      },
+      ...({
+        onError: ({ error }: { error: unknown }) => {
+          streamError = error;
+          console.error(
+            `LLM stream error chatId=${chatId} message=${publicLlmErrorMessage(error)}`,
+          );
+        },
+      } as object),
     });
 
     for await (const delta of result.textStream) {
@@ -185,6 +208,7 @@ export async function streamChatCompletion(params: StreamChatParams): Promise<vo
       throw streamError;
     }
 
+    // usage is aggregate across all agent steps (AI SDK 7)
     const [text, usage] = await Promise.all([result.text, result.usage]);
 
     const inputTokens = usage.inputTokens ?? 0;

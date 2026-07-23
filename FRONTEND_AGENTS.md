@@ -301,8 +301,9 @@ There is **no** create-chat endpoint. `/new` is client-only.
 ```
 User on /new → POST /chats/messages { content, model }
   → SSE chat_created { chatId }     // navigate here WITHOUT aborting the stream
+  → SSE tool_start / tool_end*      // agent loop (search, pdf, …) — optional UI status
   → SSE token { text }*             // keep streaming on /chat/:chatId
-  → SSE pdf_ready? { chatId, url, filename }
+  → SSE pdf_ready? { chatId, url, filename }  // may arrive during tool_end for create_pdf
   → SSE done { ok, ... }
 ```
 
@@ -314,6 +315,7 @@ Title suggestion: derive a sidebar title from the first user message (truncate).
 
 ```
 POST /chats/:chatId/messages { content, model }
+  → SSE tool_start / tool_end*
   → SSE token*
   → SSE pdf_ready?
   → SSE done
@@ -383,13 +385,17 @@ Native `EventSource` only supports GET — **you must parse SSE from a POST** `f
 ### Events
 
 
-| Event          | When                                    | Data                                |
-| -------------- | --------------------------------------- | ----------------------------------- |
-| `chat_created` | Only `POST /chats/messages`, before LLM | `{ chatId: string }`                |
-| `token`        | Each text delta                         | `{ text: string }`                  |
-| `pdf_ready`    | Mid-stream when PDF tool succeeds       | `{ chatId, url, filename }`         |
-| `error`        | Stream failure                          | `{ message: string, code: string }` |
-| `done`         | Always ends the stream                  | see below                           |
+| Event          | When                                    | Data                                              |
+| -------------- | --------------------------------------- | ------------------------------------------------- |
+| `chat_created` | Only `POST /chats/messages`, before LLM | `{ chatId: string }`                              |
+| `tool_start`   | Before each tool execute in agent loop  | `{ chatId, toolName, toolCallId }`                |
+| `tool_end`     | After each tool execute finishes        | `{ chatId, toolName, toolCallId, ok: boolean }`   |
+| `token`        | Each text delta                         | `{ text: string }`                                |
+| `pdf_ready`    | Mid-stream when PDF tool succeeds       | `{ chatId, url, filename }`                       |
+| `error`        | Stream failure                          | `{ message: string, code: string }`               |
+| `done`         | Always ends the stream                  | see below                                         |
+
+`tool_start` / `tool_end` carry **names and ids only** (no tool args/results). Known `toolName` values today: `web_search`, `create_pdf`. Safe to ignore if the UI does not show agent activity.
 
 
 `done` **success:**
@@ -458,7 +464,7 @@ Current catalog (use `id` in message bodies):
 | `gpt-5.4-mini`               | openai   | GPT-5.4 Mini      |
 | `gpt-5.4-nano`               | openai   | GPT-5.4 Nano      |
 | `claude-sonnet-4-5-20250929` | claude   | Claude Sonnet 4.5 |
-| `claude-sonnet-4-20250514`   | claude   | Claude Sonnet 4   |
+| `claude-haiku-4-5-20251001`  | claude   | Claude Haiku 4.5  |
 | `gemini-2.5-flash`           | gemini   | Gemini 2.5 Flash  |
 | `gemini-2.5-pro`             | gemini   | Gemini 2.5 Pro    |
 
@@ -657,6 +663,7 @@ sequenceDiagram
   UI->>API: POST /chats/messages Bearer
   API-->>UI: SSE chat_created
   UI->>UI: navigate /chat/id keep stream
+  API-->>UI: SSE tool_start / tool_end optional
   API-->>UI: SSE token chunks
   API-->>UI: SSE pdf_ready optional
   API-->>UI: SSE done with sources usage
@@ -676,7 +683,7 @@ sequenceDiagram
 3. **Platform credits** — chat requires `balance > 0`. Note: token→credit rates are currently **placeholder zeros** (`creditsCharged` may be `0`), but the balance gate still applies.
 4. **404 not 403** for other users’ chats — show not found.
 5. **Masked keys only** — `last_four`, never full key reveal.
-6. **Tools are model-driven** — search/PDF happen server-side during the stream; UI only displays tokens, sources, and PDF links.
+6. **Tools are model-driven** — the server runs a multi-step agent loop (think → tool → observe → repeat); UI may show status from `tool_start`/`tool_end`, and displays tokens, sources, and PDF links.
 7. **No chat list API** — use client-side history until the backend adds one.
 
 ---

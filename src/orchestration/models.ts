@@ -15,7 +15,7 @@ export const AVAILABLE_MODELS: readonly ModelDefinition[] = [
   { id: "gpt-5.4-mini", provider: "openai", label: "GPT-5.4 Mini" },
   { id: "gpt-5.4-nano", provider: "openai", label: "GPT-5.4 Nano" },
   { id: "claude-sonnet-4-5-20250929", provider: "claude", label: "Claude Sonnet 4.5" },
-  { id: "claude-sonnet-4-20250514", provider: "claude", label: "Claude Sonnet 4" },
+  { id: "claude-haiku-4-5-20251001", provider: "claude", label: "Claude Haiku 4.5" },
   { id: "gemini-2.5-flash", provider: "gemini", label: "Gemini 2.5 Flash" },
   { id: "gemini-2.5-pro", provider: "gemini", label: "Gemini 2.5 Pro" },
 ] as const;

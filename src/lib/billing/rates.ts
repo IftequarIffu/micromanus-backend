@@ -44,7 +44,7 @@ export const MODEL_USD_RATES: Record<string, ModelUsdRates> = {
   "gpt-5.4-mini": { inputPer1M: 0.75, outputPer1M: 4.5, cachedPer1M: 0.075 },
   "gpt-5.4-nano": { inputPer1M: 0.2, outputPer1M: 1.25, cachedPer1M: 0.02 },
   "claude-sonnet-4-5-20250929": { inputPer1M: 3, outputPer1M: 15, cachedPer1M: 0.3 },
-  "claude-sonnet-4-20250514": { inputPer1M: 3, outputPer1M: 15, cachedPer1M: 0.3 },
+  "claude-haiku-4-5-20251001": { inputPer1M: 1, outputPer1M: 5, cachedPer1M: 0.1 },
   "gemini-2.5-flash": { inputPer1M: 0.3, outputPer1M: 2.5, cachedPer1M: 0.03 },
   // Standard tier (<=200k prompt); long-context tier is higher.
   "gemini-2.5-pro": { inputPer1M: 1.25, outputPer1M: 10, cachedPer1M: 0.125 },

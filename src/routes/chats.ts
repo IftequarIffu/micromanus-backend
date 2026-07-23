@@ -35,7 +35,7 @@ function sendAppError(res: Response, err: unknown): boolean {
 
 /**
  * First message of a new chat.
- * SSE events: chat_created → token* → (pdf_ready?) → done | error
+ * SSE events: chat_created → (tool_start/tool_end)* → token* → (pdf_ready?) → done | error
  */
 chatsRouter.post("/chats/messages", async (req, res, next) => {
   try {
@@ -74,7 +74,7 @@ chatsRouter.post("/chats/messages", async (req, res, next) => {
 
 /**
  * Follow-up message in an existing chat.
- * SSE events: token* → (pdf_ready?) → done | error
+ * SSE events: (tool_start/tool_end)* → token* → (pdf_ready?) → done | error
  */
 chatsRouter.post("/chats/:chatId/messages", async (req, res, next) => {
   try {

@@ -121,7 +121,7 @@ curl -sS http://localhost:3000/models \
   -H "Authorization: Bearer <SUPABASE_ACCESS_TOKEN>"
 
 # First message of a new chat (SSE)
-# Events: chat_created → token* → (pdf_ready?) → done
+# Events: chat_created → (tool_start/tool_end)* → token* → (pdf_ready?) → done
 curl -sS -N http://localhost:3000/chats/messages \
   -H "Authorization: Bearer <SUPABASE_ACCESS_TOKEN>" \
   -H "Content-Type: application/json" \
@@ -130,7 +130,7 @@ curl -sS -N http://localhost:3000/chats/messages \
 
 # New chat whose first message asks for a PDF (lazy create + tools)
 # Needs TAVILY_API_KEY + private Storage bucket chat-pdfs
-# Events: chat_created → token* → pdf_ready → token* → done (with optional pdf)
+# Events: chat_created → (tool_start/tool_end)* → pdf_ready → token* → done (with optional pdf)
 curl -sS -N http://localhost:3000/chats/messages \
   -H "Authorization: Bearer <SUPABASE_ACCESS_TOKEN>" \
   -H "Content-Type: application/json" \
@@ -162,6 +162,8 @@ Watch the dev-server terminal for chat / LLM / search / pdf / credit logs (never
 | Event | When | Data |
 |---|---|---|
 | `chat_created` | First message only, before LLM | `{ "chatId": "..." }` |
+| `tool_start` | Before each tool runs in the agent loop | `{ "chatId", "toolName", "toolCallId" }` |
+| `tool_end` | After each tool finishes | `{ "chatId", "toolName", "toolCallId", "ok": true\|false }` |
 | `token` | Each text delta | `{ "text": "..." }` |
 | `pdf_ready` | As soon as `create_pdf` tool succeeds (mid-stream) | `{ "chatId": "...", "url": "...", "filename": "..." }` |
 | `error` | Soft failures | `{ "message": "..." }` |

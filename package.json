@@ -7,7 +7,7 @@
     "dev": "bun run --watch src/index.ts",
     "start": "bun run dist/index.js",
     "build": "bun build src/index.ts --outdir dist --target bun",
-    "vercel-build": "esbuild src/vercel-entry.ts --bundle --platform=node --format=esm --packages=external --outfile=api/index.js",
+    "vercel-build": "esbuild src/vercel-entry.ts --bundle --platform=node --format=cjs --outfile=api/index.js && node scripts/fix-vercel-cjs-export.mjs",
     "typecheck": "tsc --noEmit",
     "lint": "eslint src db scripts",
     "db:verify": "bun run scripts/verify-supabase.ts"

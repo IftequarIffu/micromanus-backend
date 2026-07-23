@@ -263,11 +263,11 @@ Deploy this repo as its **own** Vercel project (separate from the frontend).
 
 How it works on Vercel:
 
-1. `vercel-build` (esbuild) bundles `src/vercel-entry.ts` → `api/index.js` (Node ESM; deps stay external).
-2. `vercel.json` rewrites every path to `/api`, which runs that serverless function (`maxDuration: 300`).
+1. `vercel-build` (esbuild) bundles `src/vercel-entry.ts` → `api/index.js` as **CommonJS** (full bundle) and unwraps `export default` so `module.exports` is the request handler.
+2. `vercel.json` routes every path to `api/index.js` via `@vercel/node` (`maxDuration: 300`).
 3. Local `bun run dev` is unchanged (`src/index.ts`).
 
-Do **not** set `bunVersion` in the project. If an older deploy used Bun or `framework: express` with an empty build command, redeploy from this setup (that combination produced platform `NOT_FOUND` with no function).
+Do **not** set `bunVersion`. Prefer this CJS handler path over ESM/`framework: express` zero-config (those caused `NOT_FOUND` / function crashes with this repo).
 
 ### 1. Import and configure
 

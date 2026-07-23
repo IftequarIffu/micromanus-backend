@@ -1,4 +1,11 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "bunVersion": "1.x"
+  "framework": "express",
+  "fluid": true,
+  "maxDuration": 300,
+  "buildCommand": "",
+  "env": {
+    "VERCEL_EXPERIMENTAL_BACKENDS": "1",
+    "VERCEL_ENABLE_EXPERIMENTAL_BUILD_MODE": "1"
+  }
 }

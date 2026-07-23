@@ -35,7 +35,7 @@ Make **micromanus-backend** and **micromanus-frontend** deployable as **two sepa
 ## Decisions / assumptions
 
 1. **Two Vercel projects** (separate Git repos): one for backend, one for frontend. Do not merge into one project unless the user later asks.
-2. **Backend runtime: Bun on Vercel** via `vercel.json` `"bunVersion": "1.x"` (matches local Bun + Stripe `constructEventAsync`). Keep Fluid compute defaults; set `maxDuration` high enough for LLM+tool SSE (e.g. **300** on Hobby, document Pro can raise to 800).
+2. **Backend runtime: Node on Vercel** (default Express runtime). Do **not** set `bunVersion` — Bun on Vercel fails with empty `ResolveMessage` for this repo’s `.ts` imports. Enable experimental Express build via `VERCEL_EXPERIMENTAL_BACKENDS=1` and `VERCEL_ENABLE_EXPERIMENTAL_BUILD_MODE=1` in `vercel.json` `env`. Keep Fluid compute; set `maxDuration` to **300** (document Pro can raise to 800). Local `bun run dev` is unchanged.
 3. **Vercel entry:** export the Express app as **default export** from `src/index.ts` (recognized entry). Call `app.listen` only when **not** running on Vercel (`!process.env.VERCEL`), so local `bun run dev` / `start` still works.
 4. **CORS is required for production.** Add middleware (prefer `cors` package) driven by env:
    - `CORS_ORIGINS` — comma-separated absolute origins (e.g. `https://micromanus.vercel.app,https://micromanus-git-main-….vercel.app`)
@@ -88,8 +88,9 @@ package.json                     # optional: engines / vercel-friendly build not
 
 1. Add `vercel.json`:
    - `"$schema": "https://openapi.vercel.sh/vercel.json"`
-   - `"bunVersion": "1.x"`
-   - `"maxDuration": 300` (project/function level as supported for Express-on-Vercel)
+   - `"framework": "express"`, `"fluid": true`, `"maxDuration": 300`
+   - **No** `bunVersion` (Node runtime)
+   - `env.VERCEL_EXPERIMENTAL_BACKENDS=1` and `env.VERCEL_ENABLE_EXPERIMENTAL_BUILD_MODE=1` (fixes TS `.ts` import resolution / empty `ResolveMessage`)
 2. `src/index.ts`: create app, `export default app`, listen only when `process.env.VERCEL` is unset.
 3. CORS middleware from `CORS_ORIGINS` (split on comma, trim). If unset in production, log a clear warning; requests from browsers with no matching origin fail CORS (expected until env is set). Locally, either leave unset (same-origin via proxy) or allow `http://localhost:5173`.
 4. Stripe live-key guard as in decision 5.

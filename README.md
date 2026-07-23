@@ -259,13 +259,14 @@ Note: there is no standalone create-chat route. A chat is created on `POST /chat
 
 ## Deploy to Vercel
 
-Deploy this repo as its **own** Vercel project (separate from the frontend). Express runs as a single Fluid compute function on **Bun**.
+Deploy this repo as its **own** Vercel project (separate from the frontend). Express runs as a single Fluid compute function on the **Node.js** runtime (not Bun — Bun on Vercel hits empty `ResolveMessage` crashes with this codebase’s `.ts` imports).
 
 ### 1. Import and configure
 
 1. [Import](https://vercel.com/new) the `micromanus-backend` Git repo (or `vercel` / `vercel --prod` from the CLI).
-2. Vercel detects Express via `src/index.ts` default export. `vercel.json` sets `bunVersion: "1.x"` and `maxDuration: 300` (raise to `800` on Pro if long agent runs need it).
-3. Set **Production** environment variables (same names as `.env.example`):
+2. Vercel detects Express via `src/index.ts` default export. `vercel.json` sets `framework: express`, `maxDuration: 300`, and enables experimental Express build mode (`VERCEL_EXPERIMENTAL_BACKENDS` / `VERCEL_ENABLE_EXPERIMENTAL_BUILD_MODE`) so TypeScript `.ts` imports resolve correctly.
+3. Do **not** set `bunVersion` in the dashboard. Local `bun run dev` is unchanged.
+4. Set **Production** environment variables (same names as `.env.example`):
 
 | Variable | Notes |
 |---|---|
@@ -280,6 +281,8 @@ Deploy this repo as its **own** Vercel project (separate from the frontend). Exp
 | `CHECKOUT_CANCEL_URL` | `https://<frontend>.vercel.app/credits?checkout=cancel` |
 | `CORS_ORIGINS` | Comma-separated frontend origins, e.g. `https://<frontend>.vercel.app` |
 | `ALLOW_LIVE_STRIPE` | Leave unset/`false` to keep Test mode only |
+
+If you previously deployed with `bunVersion: "1.x"`, redeploy from this commit (or remove Bun runtime in Project Settings) so the Node + experimental build path is used.
 
 ### 2. Stripe Test mode on the production URL
 
